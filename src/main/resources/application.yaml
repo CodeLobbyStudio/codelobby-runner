@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: codelobby-runner
+
+server:
+  address: ${RUNNER_BIND_ADDRESS:127.0.0.1}
+  port: ${RUNNER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

@@ -1,0 +1,16 @@
+{
+  "submissionId": "submission-001",
+  "taskVersionId": "task-v2",
+  "contractVersion": "1.0.0-draft.2",
+  "state": "FAILED",
+  "createdAt": "2026-10-20T10:00:00Z",
+  "startedAt": "2026-10-20T10:00:01Z",
+  "finishedAt": "2026-10-20T10:00:02Z",
+  "expiresAt": "2026-10-20T10:30:02Z",
+  "result": null,
+  "error": {
+    "code": "EXECUTION_INFRASTRUCTURE_ERROR",
+    "message": "The execution engine became unavailable.",
+    "retryable": true
+  }
+}

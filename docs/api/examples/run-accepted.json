@@ -1,0 +1,39 @@
+{
+  "requestId": "run-001",
+  "taskVersionId": "task-v2",
+  "contractVersion": "1.0.0-draft.2",
+  "result": {
+    "status": "ACCEPTED",
+    "passedTests": 1,
+    "totalTests": 1,
+    "testResults": [
+      {
+        "testId": "public-1",
+        "suiteId": "public-suite",
+        "visibility": "PUBLIC",
+        "status": "ACCEPTED",
+        "input": {
+          "text": "codelobby"
+        },
+        "expectedOutput": 3,
+        "actualOutput": 3,
+        "stdout": null,
+        "stderr": null
+      }
+    ],
+    "compileOutput": "",
+    "message": null,
+    "sandboxCpuTimeMs": 90.0,
+    "sandboxPeakMemoryBytes": 42000000,
+    "benchmark": {
+      "state": "NOT_REQUESTED",
+      "reason": "RUN_OPERATION",
+      "warmupRounds": 2,
+      "measuredRounds": 5,
+      "measurementScope": "ALL_TEST_SUITES",
+      "measurementTrust": "SANDBOX_EXTERNAL",
+      "metrics": null
+    },
+    "gradingIntegrity": "HOST_TESTS_IN_PARTICIPANT_SANDBOX"
+  }
+}

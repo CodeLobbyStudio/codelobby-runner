@@ -1,0 +1,37 @@
+{
+  "requestId": "run-001",
+  "taskVersionId": "task-v2",
+  "contractVersion": "1.0.0-draft.2",
+  "result": {
+    "status": "COMPILATION_ERROR",
+    "passedTests": 0,
+    "totalTests": 1,
+    "testResults": [
+      {
+        "testId": "public-1",
+        "suiteId": "public-suite",
+        "visibility": "PUBLIC",
+        "status": "NOT_RUN",
+        "input": null,
+        "expectedOutput": null,
+        "actualOutput": null,
+        "stdout": null,
+        "stderr": null
+      }
+    ],
+    "compileOutput": "src/Solution.java:3: error: missing return statement",
+    "message": null,
+    "sandboxCpuTimeMs": null,
+    "sandboxPeakMemoryBytes": null,
+    "benchmark": {
+      "state": "NOT_REQUESTED",
+      "reason": "RUN_OPERATION",
+      "warmupRounds": 2,
+      "measuredRounds": 5,
+      "measurementScope": "ALL_TEST_SUITES",
+      "measurementTrust": "SANDBOX_EXTERNAL",
+      "metrics": null
+    },
+    "gradingIntegrity": "HOST_TESTS_IN_PARTICIPANT_SANDBOX"
+  }
+}

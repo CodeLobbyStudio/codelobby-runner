@@ -1,0 +1,1912 @@
+openapi: 3.1.1
+info:
+  title: CodeLobby Runner Internal API
+  version: 1.0.0-draft.2
+  description: 'Revised unpublished v1 draft for host-defined multi-file tasks in
+    JAVA, CPP and PYTHON. File roles: EDITABLE, READ_ONLY, VISIBLE_TEST, HIDDEN_TEST.
+    Run evaluates all public test suites; Submit evaluates public and hidden suites.
+    See CONTRACT.md for normative assembly, execution, report integrity and redaction
+    rules. Not an implementation claim.'
+servers:
+- url: http://127.0.0.1:8081
+  description: Local development only; production requires authenticated TLS transport
+    or an equivalent protected service channel.
+security:
+- InternalKey: []
+tags:
+- name: Evaluation
+- name: Capabilities
+paths:
+  /internal/v1/runs:
+    post:
+      operationId: runPublicTests
+      summary: Synchronously evaluate all public tests
+      tags:
+      - Evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunRequest'
+            examples:
+              run-request:
+                value:
+                  requestId: run-001
+                  taskVersionId: task-v2
+                  language: JAVA
+                  taskFiles:
+                  - &id001
+                    path: src/Solution.java
+                    type: EDITABLE
+                    content: "public class Solution {\n    public static int countVowels(String\
+                      \ text) { return 0; }\n}\n"
+                  - &id002
+                    path: src/Helpers.java
+                    type: READ_ONLY
+                    content: "public class Helpers {\n    public static int count(String\
+                      \ text) {\n        int n = 0;\n        for (char c : text.toCharArray())\
+                      \ if (\"aeiou\".indexOf(c) >= 0) n++;\n        return n;\n \
+                      \   }\n}\n"
+                  - &id003
+                    path: tests/PublicTests.java
+                    type: VISIBLE_TEST
+                    content: "import java.nio.file.Files;\nimport java.nio.file.Path;\n\
+                      public class PublicTests {\n    public static void main(String[]\
+                      \ args) throws Exception {\n        int actual = Solution.countVowels(\"\
+                      codelobby\");\n        String status = actual == 3 ? \"ACCEPTED\"\
+                      \ : \"WRONG_ANSWER\";\n        String record = \"{\\\"testId\\\
+                      \":\\\"public-1\\\",\\\"status\\\":\\\"\" + status\n       \
+                      \     + \"\\\",\\\"input\\\":{\\\"text\\\":\\\"codelobby\\\"\
+                      },\\\"expectedOutput\\\":3,\\\"actualOutput\\\":\" + actual\
+                      \ + \"}\\n\";\n        Files.writeString(Path.of(System.getenv(\"\
+                      CODELOBBY_REPORT_PATH\")), record);\n    }\n}\n"
+                  submissionFiles:
+                  - path: src/Solution.java
+                    content: "public class Solution {\n    public static int countVowels(String\
+                      \ text) { return Helpers.count(text); }\n}\n"
+                  testSuites:
+                  - &id004
+                    suiteId: public-suite
+                    visibility: PUBLIC
+                    testFilePaths:
+                    - tests/PublicTests.java
+                    execution:
+                      profile: JAVA_MAIN
+                      mainClass: PublicTests
+                    cases:
+                    - testId: public-1
+                  limits:
+                    cpuTimeMs: 2000
+                    wallTimeMs: 5000
+                    memoryLimitBytes: 128000000
+              run-request-cpp:
+                value:
+                  requestId: run-cpp-001
+                  taskVersionId: task-v2
+                  language: CPP
+                  taskFiles:
+                  - path: src/solution.cpp
+                    type: EDITABLE
+                    content: 'int twice(int value) { return 0; }
+
+                      '
+                  - path: include/solution.h
+                    type: READ_ONLY
+                    content: '#pragma once
+
+                      int twice(int value);
+
+                      '
+                  - path: tests/public_tests.cpp
+                    type: VISIBLE_TEST
+                    content: "#include \"solution.h\"\n#include <cstdlib>\n#include\
+                      \ <fstream>\nint main() {\n    int actual = twice(4);\n    std::ofstream\
+                      \ report(std::getenv(\"CODELOBBY_REPORT_PATH\"));\n    report\
+                      \ << \"{\\\"testId\\\":\\\"cpp-public-1\\\",\\\"status\\\":\\\
+                      \"\"\n           << (actual == 8 ? \"ACCEPTED\" : \"WRONG_ANSWER\"\
+                      )\n           << \"\\\",\\\"input\\\":4,\\\"expectedOutput\\\
+                      \":8,\\\"actualOutput\\\":\" << actual << \"}\\n\";\n}\n"
+                  submissionFiles:
+                  - path: src/solution.cpp
+                    content: 'int twice(int value) { return value * 2; }
+
+                      '
+                  testSuites:
+                  - suiteId: cpp-public
+                    visibility: PUBLIC
+                    testFilePaths:
+                    - tests/public_tests.cpp
+                    execution:
+                      profile: CPP_MAIN
+                      mainSourcePath: tests/public_tests.cpp
+                    cases:
+                    - testId: cpp-public-1
+                  limits:
+                    cpuTimeMs: 2000
+                    wallTimeMs: 5000
+                    memoryLimitBytes: 128000000
+              run-request-python:
+                value:
+                  requestId: run-python-001
+                  taskVersionId: task-v2
+                  language: PYTHON
+                  taskFiles:
+                  - path: src/solution.py
+                    type: EDITABLE
+                    content: "def square(value):\n    return 0\n"
+                  - path: src/helpers.py
+                    type: READ_ONLY
+                    content: "def identity(value):\n    return value\n"
+                  - path: tests/public_tests.py
+                    type: VISIBLE_TEST
+                    content: 'import json, os, sys
+
+                      from pathlib import Path
+
+                      sys.path.insert(0, str(Path.cwd() / "src"))
+
+                      from solution import square
+
+                      actual = square(4)
+
+                      record = {"testId": "py-public-1", "status": "ACCEPTED" if actual
+                      == 16 else "WRONG_ANSWER", "input": 4, "expectedOutput": 16,
+                      "actualOutput": actual}
+
+                      Path(os.environ["CODELOBBY_REPORT_PATH"]).write_text(json.dumps(record)
+                      + "\n", encoding="utf-8")
+
+                      '
+                  submissionFiles:
+                  - path: src/solution.py
+                    content: "def square(value):\n    return value * value\n"
+                  testSuites:
+                  - suiteId: py-public
+                    visibility: PUBLIC
+                    testFilePaths:
+                    - tests/public_tests.py
+                    execution:
+                      profile: PYTHON_SCRIPT
+                      scriptPath: tests/public_tests.py
+                    cases:
+                    - testId: py-public-1
+                  limits:
+                    cpuTimeMs: 2000
+                    wallTimeMs: 5000
+                    memoryLimitBytes: 128000000
+      responses:
+        '200':
+          description: Completed evaluation, including negative solution verdicts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunResponse'
+              examples:
+                run-accepted:
+                  value:
+                    requestId: run-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    result:
+                      status: ACCEPTED
+                      passedTests: 1
+                      totalTests: 1
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: ACCEPTED
+                        input:
+                          text: codelobby
+                        expectedOutput: 3
+                        actualOutput: 3
+                        stdout: null
+                        stderr: null
+                      compileOutput: ''
+                      message: null
+                      sandboxCpuTimeMs: 90.0
+                      sandboxPeakMemoryBytes: 42000000
+                      benchmark:
+                        state: NOT_REQUESTED
+                        reason: RUN_OPERATION
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics: null
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                run-wrong-answer:
+                  value:
+                    requestId: run-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    result:
+                      status: WRONG_ANSWER
+                      passedTests: 0
+                      totalTests: 1
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: WRONG_ANSWER
+                        input:
+                          text: codelobby
+                        expectedOutput: 3
+                        actualOutput: 2
+                        stdout: null
+                        stderr: null
+                      compileOutput: ''
+                      message: null
+                      sandboxCpuTimeMs: 90.0
+                      sandboxPeakMemoryBytes: 42000000
+                      benchmark:
+                        state: NOT_REQUESTED
+                        reason: RUN_OPERATION
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics: null
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                run-compilation-error:
+                  value:
+                    requestId: run-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    result:
+                      status: COMPILATION_ERROR
+                      passedTests: 0
+                      totalTests: 1
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: NOT_RUN
+                        input: null
+                        expectedOutput: null
+                        actualOutput: null
+                        stdout: null
+                        stderr: null
+                      compileOutput: 'src/Solution.java:3: error: missing return statement'
+                      message: null
+                      sandboxCpuTimeMs: null
+                      sandboxPeakMemoryBytes: null
+                      benchmark:
+                        state: NOT_REQUESTED
+                        reason: RUN_OPERATION
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics: null
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '413':
+          $ref: '#/components/responses/413'
+        '415':
+          $ref: '#/components/responses/415'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+        '504':
+          $ref: '#/components/responses/504'
+  /internal/v1/evaluation-jobs:
+    post:
+      operationId: submitEvaluation
+      summary: Queue public and hidden test evaluation
+      tags:
+      - Evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
+            examples:
+              submit-request:
+                value:
+                  taskVersionId: task-v2
+                  language: JAVA
+                  taskFiles:
+                  - *id001
+                  - *id002
+                  - *id003
+                  - path: tests/HiddenTests.java
+                    type: HIDDEN_TEST
+                    content: "import java.nio.file.Files;\nimport java.nio.file.Path;\n\
+                      public class HiddenTests {\n    public static void main(String[]\
+                      \ args) throws Exception {\n        int actual = Solution.countVowels(\"\
+                      aeiou\");\n        String status = actual == 5 ? \"ACCEPTED\"\
+                      \ : \"WRONG_ANSWER\";\n        String record = \"{\\\"testId\\\
+                      \":\\\"hidden-1\\\",\\\"status\\\":\\\"\" + status\n       \
+                      \     + \"\\\",\\\"input\\\":{\\\"text\\\":\\\"aeiou\\\"},\\\
+                      \"expectedOutput\\\":5,\\\"actualOutput\\\":\" + actual + \"\
+                      }\\n\";\n        Files.writeString(Path.of(System.getenv(\"\
+                      CODELOBBY_REPORT_PATH\")), record);\n    }\n}\n"
+                  submissionFiles:
+                  - path: src/Solution.java
+                    content: "public class Solution {\n    public static int countVowels(String\
+                      \ text) { return Helpers.count(text); }\n}\n"
+                  testSuites:
+                  - *id004
+                  - suiteId: hidden-suite
+                    visibility: HIDDEN
+                    testFilePaths:
+                    - tests/HiddenTests.java
+                    execution:
+                      profile: JAVA_MAIN
+                      mainClass: HiddenTests
+                    cases:
+                    - testId: hidden-1
+                  limits:
+                    cpuTimeMs: 2000
+                    wallTimeMs: 5000
+                    memoryLimitBytes: 128000000
+                  submissionId: submission-001
+      responses:
+        '202':
+          description: Newly accepted job or replay of a QUEUED/RUNNING job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+              examples:
+                job-queued:
+                  value: &id005
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: QUEUED
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: null
+                    finishedAt: null
+                    expiresAt: null
+                    result: null
+                    error: null
+                job-running:
+                  value: &id006
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: RUNNING
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: '2026-10-20T10:00:01Z'
+                    finishedAt: null
+                    expiresAt: null
+                    result: null
+                    error: null
+          headers:
+            Location:
+              required: true
+              description: Relative URL for GET by submissionId.
+              schema:
+                type: string
+              example: /internal/v1/evaluation-jobs/submission-001
+        '200':
+          description: Replay of an existing terminal job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+              examples:
+                job-finished:
+                  value: &id007
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: FINISHED
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: '2026-10-20T10:00:01Z'
+                    finishedAt: '2026-10-20T10:00:04Z'
+                    expiresAt: '2026-10-20T10:30:04Z'
+                    result:
+                      status: ACCEPTED
+                      passedTests: 2
+                      totalTests: 2
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: ACCEPTED
+                        input:
+                          text: codelobby
+                        expectedOutput: 3
+                        actualOutput: 3
+                        stdout: null
+                        stderr: null
+                      - testId: hidden-1
+                        suiteId: hidden-suite
+                        visibility: HIDDEN
+                        status: ACCEPTED
+                        input: null
+                        expectedOutput: null
+                        actualOutput: null
+                        stdout: null
+                        stderr: null
+                      compileOutput: null
+                      message: null
+                      sandboxCpuTimeMs: 180.0
+                      sandboxPeakMemoryBytes: 42000000
+                      benchmark:
+                        state: SUCCEEDED
+                        reason: null
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics:
+                          runtimeMs: 180.0
+                          sandboxCpuTimeMs: 180.0
+                          peakMemoryBytes: 43000000
+                          roundRuntimeMs:
+                          - 180.0
+                          - 179.0
+                          - 185.0
+                          - 180.0
+                          - 178.0
+                          roundSandboxCpuTimeMs:
+                          - 180.0
+                          - 179.0
+                          - 185.0
+                          - 180.0
+                          - 178.0
+                          roundPeakMemoryBytes:
+                          - 42000000
+                          - 43000000
+                          - 42000000
+                          - 43000000
+                          - 42000000
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                    error: null
+                job-failed:
+                  value: &id008
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: FAILED
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: '2026-10-20T10:00:01Z'
+                    finishedAt: '2026-10-20T10:00:02Z'
+                    expiresAt: '2026-10-20T10:30:02Z'
+                    result: null
+                    error:
+                      code: EXECUTION_INFRASTRUCTURE_ERROR
+                      message: The execution engine became unavailable.
+                      retryable: true
+          headers:
+            Location:
+              required: true
+              description: Relative URL for GET by submissionId.
+              schema:
+                type: string
+              example: /internal/v1/evaluation-jobs/submission-001
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '409':
+          $ref: '#/components/responses/409'
+        '413':
+          $ref: '#/components/responses/413'
+        '415':
+          $ref: '#/components/responses/415'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /internal/v1/evaluation-jobs/{submissionId}:
+    get:
+      operationId: getEvaluationJob
+      summary: Retrieve a job by submissionId
+      tags:
+      - Evaluation
+      parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      responses:
+        '200':
+          description: Current snapshot; never returns partial test output while active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+              examples:
+                job-queued:
+                  value: *id005
+                job-running:
+                  value: *id006
+                job-finished:
+                  value: *id007
+                job-wrong-answer:
+                  value:
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: FINISHED
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: '2026-10-20T10:00:01Z'
+                    finishedAt: '2026-10-20T10:00:04Z'
+                    expiresAt: '2026-10-20T10:30:04Z'
+                    result:
+                      status: WRONG_ANSWER
+                      passedTests: 1
+                      totalTests: 2
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: WRONG_ANSWER
+                        input:
+                          text: codelobby
+                        expectedOutput: 3
+                        actualOutput: 2
+                        stdout: null
+                        stderr: null
+                      - testId: hidden-1
+                        suiteId: hidden-suite
+                        visibility: HIDDEN
+                        status: ACCEPTED
+                        input: null
+                        expectedOutput: null
+                        actualOutput: null
+                        stdout: null
+                        stderr: null
+                      compileOutput: null
+                      message: null
+                      sandboxCpuTimeMs: 180.0
+                      sandboxPeakMemoryBytes: 42000000
+                      benchmark:
+                        state: SKIPPED
+                        reason: EVALUATION_NOT_ACCEPTED
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics: null
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                    error: null
+                job-failed:
+                  value: *id008
+                job-benchmark-failed:
+                  value:
+                    submissionId: submission-001
+                    taskVersionId: task-v2
+                    contractVersion: 1.0.0-draft.2
+                    state: FINISHED
+                    createdAt: '2026-10-20T10:00:00Z'
+                    startedAt: '2026-10-20T10:00:01Z'
+                    finishedAt: '2026-10-20T10:00:04Z'
+                    expiresAt: '2026-10-20T10:30:04Z'
+                    result:
+                      status: ACCEPTED
+                      passedTests: 2
+                      totalTests: 2
+                      testResults:
+                      - testId: public-1
+                        suiteId: public-suite
+                        visibility: PUBLIC
+                        status: ACCEPTED
+                        input:
+                          text: codelobby
+                        expectedOutput: 3
+                        actualOutput: 3
+                        stdout: null
+                        stderr: null
+                      - testId: hidden-1
+                        suiteId: hidden-suite
+                        visibility: HIDDEN
+                        status: ACCEPTED
+                        input: null
+                        expectedOutput: null
+                        actualOutput: null
+                        stdout: null
+                        stderr: null
+                      compileOutput: null
+                      message: null
+                      sandboxCpuTimeMs: 180.0
+                      sandboxPeakMemoryBytes: 42000000
+                      benchmark:
+                        state: FAILED
+                        reason: MEASUREMENT_UNAVAILABLE
+                        warmupRounds: 2
+                        measuredRounds: 5
+                        measurementScope: ALL_TEST_SUITES
+                        measurementTrust: SANDBOX_EXTERNAL
+                        metrics: null
+                      gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                    error: null
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /internal/v1/capabilities:
+    get:
+      operationId: getCapabilities
+      summary: Discover the deployed execution profile
+      tags:
+      - Capabilities
+      responses:
+        '200':
+          description: Actual supported and verified execution profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+              examples:
+                capabilities:
+                  value:
+                    contractVersion: 1.0.0-draft.2
+                    environmentId: multilanguage-judge0-profile-v1
+                    languages:
+                    - language: JAVA
+                      version: OpenJDK 21.0.7
+                      languageStandard: Java 21
+                      executionProfiles:
+                      - JAVA_MAIN
+                      supportedFileTypes:
+                      - EDITABLE
+                      - READ_ONLY
+                      - VISIBLE_TEST
+                      - HIDDEN_TEST
+                      supportsMultipleFiles: true
+                      builtinLibraries: []
+                    - language: CPP
+                      version: GCC 13.2.0
+                      languageStandard: C++17
+                      executionProfiles:
+                      - CPP_MAIN
+                      supportedFileTypes:
+                      - EDITABLE
+                      - READ_ONLY
+                      - VISIBLE_TEST
+                      - HIDDEN_TEST
+                      supportsMultipleFiles: true
+                      builtinLibraries: []
+                    - language: PYTHON
+                      version: CPython 3.12.9
+                      languageStandard: Python 3.12
+                      executionProfiles:
+                      - PYTHON_SCRIPT
+                      supportedFileTypes:
+                      - EDITABLE
+                      - READ_ONLY
+                      - VISIBLE_TEST
+                      - HIDDEN_TEST
+                      supportsMultipleFiles: true
+                      builtinLibraries: []
+                    defaultLimits:
+                      cpuTimeMs: 2000
+                      wallTimeMs: 5000
+                      memoryLimitBytes: 128000000
+                    maxLimits:
+                      cpuTimeMs: 2000
+                      wallTimeMs: 5000
+                      memoryLimitBytes: 128000000
+                    compilationLimits:
+                      cpuTimeMs: 10000
+                      wallTimeMs: 20000
+                      memoryLimitBytes: 512000000
+                    maxRequestBytes: 2000000
+                    maxTests: 50
+                    maxStdoutBytes: 65536
+                    maxStderrBytes: 65536
+                    maxCompileOutputBytes: 65536
+                    queue:
+                      maxConcurrentExecutions: 1
+                      maxPendingExecutions: 10
+                      maxStoredJobs: 100
+                      resultRetentionSeconds: 1800
+                      durable: false
+                    runDeadlineMs: 60000
+                    jobDeadlineMs: 180000
+                    benchmarkPolicy:
+                      enabledForAcceptedSubmissions: true
+                      warmupRounds: 2
+                      measuredRounds: 5
+                      roundLimitScope: ALL_SELECTED_SUITES
+                      measurementTrust: SANDBOX_EXTERNAL
+                    maxTaskFiles: 50
+                    maxFileBytes: 131072
+                    maxProjectBytes: 1048576
+                    maxDiagnosticValueBytes: 100000
+                    maxPathCharacters: 240
+                    reportProtocol: CODELOBBY_NDJSON_V1
+                    gradingIntegrity: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+                    limitsScope: ALL_SELECTED_SUITES
+                    maxReportBytes: 1000000
+                    maxReportLineBytes: 310000
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+components:
+  securitySchemes:
+    InternalKey:
+      type: apiKey
+      in: header
+      name: X-CodeLobby-Internal-Key
+      description: At least 32 random characters, preferably 32 random bytes encoded
+        for transport. Never send to browsers or commit to Git.
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+    Verdict:
+      type: string
+      enum:
+      - ACCEPTED
+      - WRONG_ANSWER
+      - COMPILATION_ERROR
+      - RUNTIME_ERROR
+      - TIME_LIMIT_EXCEEDED
+      - MEMORY_LIMIT_EXCEEDED
+      - OUTPUT_LIMIT_EXCEEDED
+      - EXECUTION_ERROR
+    TestVerdict:
+      type: string
+      enum:
+      - ACCEPTED
+      - WRONG_ANSWER
+      - RUNTIME_ERROR
+      - TIME_LIMIT_EXCEEDED
+      - MEMORY_LIMIT_EXCEEDED
+      - OUTPUT_LIMIT_EXCEEDED
+      - EXECUTION_ERROR
+      - NOT_RUN
+    Diagnostics:
+      anyOf:
+      - type: string
+        maxLength: 65536
+        description: At most 65536 UTF-8 bytes. Null means unavailable or redacted,
+          not an empty stream.
+      - type: 'null'
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          enum:
+          - INVALID_REQUEST
+          - INVALID_SOURCE_FILES
+          - UNAUTHORIZED
+          - JOB_NOT_FOUND
+          - SUBMISSION_ID_CONFLICT
+          - PAYLOAD_TOO_LARGE
+          - QUEUE_CAPACITY_EXCEEDED
+          - EXECUTION_UNAVAILABLE
+          - REQUEST_DEADLINE_EXCEEDED
+          - INTERNAL_SERVER_ERROR
+          - EXECUTION_INFRASTRUCTURE_ERROR
+        message:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        retryable:
+          type: boolean
+      required:
+      - code
+      - message
+      - retryable
+      description: Safe generic message, without source code, test data, credentials
+        or raw engine diagnostics.
+    Language:
+      type: string
+      enum:
+      - JAVA
+      - CPP
+      - PYTHON
+    FileType:
+      type: string
+      enum:
+      - EDITABLE
+      - READ_ONLY
+      - VISIBLE_TEST
+      - HIDDEN_TEST
+    RelativePath:
+      type: string
+      minLength: 1
+      maxLength: 240
+      pattern: ^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$
+      description: Canonical POSIX relative path. Additional traversal, reserved-name,
+        case-fold collision and sandbox-root checks in CONTRACT.md are mandatory.
+    TaskFile:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          $ref: '#/components/schemas/RelativePath'
+        type:
+          $ref: '#/components/schemas/FileType'
+        content:
+          type: string
+          maxLength: 131072
+          description: UTF-8 host-authored task file. Enforce 131072 bytes per file
+            and 1048576 bytes per assembled project in addition to character limits.
+      required:
+      - path
+      - type
+      - content
+    SubmissionFile:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          $ref: '#/components/schemas/RelativePath'
+        content:
+          type: string
+          maxLength: 131072
+      required:
+      - path
+      - content
+      description: Participant override of an existing EDITABLE path only; omission
+        preserves the host starter file. Types cannot be supplied or changed.
+    TestCaseDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        testId:
+          $ref: '#/components/schemas/Identifier'
+      required:
+      - testId
+      description: Stable case ID reported by the host test program. Inputs/assertions
+        and signatures live in the host files, not in a fixed function adapter.
+    JavaExecution:
+      type: object
+      additionalProperties: false
+      properties:
+        profile:
+          const: JAVA_MAIN
+          type: string
+        mainClass:
+          type: string
+          minLength: 1
+          maxLength: 240
+          pattern: ^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$
+      required:
+      - profile
+      - mainClass
+    CppExecution:
+      type: object
+      additionalProperties: false
+      properties:
+        profile:
+          const: CPP_MAIN
+          type: string
+        mainSourcePath:
+          $ref: '#/components/schemas/RelativePath'
+      required:
+      - profile
+      - mainSourcePath
+    PythonExecution:
+      type: object
+      additionalProperties: false
+      properties:
+        profile:
+          const: PYTHON_SCRIPT
+          type: string
+        scriptPath:
+          $ref: '#/components/schemas/RelativePath'
+      required:
+      - profile
+      - scriptPath
+    ExecutionProfile:
+      oneOf:
+      - $ref: '#/components/schemas/JavaExecution'
+      - $ref: '#/components/schemas/CppExecution'
+      - $ref: '#/components/schemas/PythonExecution'
+    TestSuite:
+      type: object
+      additionalProperties: false
+      properties:
+        suiteId:
+          $ref: '#/components/schemas/Identifier'
+        visibility:
+          type: string
+          enum:
+          - PUBLIC
+          - HIDDEN
+        testFilePaths:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelativePath'
+          minItems: 1
+          maxItems: 50
+        execution:
+          $ref: '#/components/schemas/ExecutionProfile'
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestCaseDefinition'
+          minItems: 1
+          maxItems: 50
+      required:
+      - suiteId
+      - visibility
+      - testFilePaths
+      - execution
+      - cases
+      description: A host-defined test target. Its test paths must match its visibility.
+        Total cases across suites is at most 50. No client shell commands or dependency
+        installation.
+    Limits:
+      type: object
+      additionalProperties: false
+      properties:
+        cpuTimeMs:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        wallTimeMs:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        memoryLimitBytes:
+          type: integer
+          minimum: 16000000
+          maximum: 128000000
+      required:
+      - cpuTimeMs
+      - wallTimeMs
+      - memoryLimitBytes
+      description: 'Required aggregate evaluation budgets across selected suites:
+        sum of sandbox CPU and sandbox wall durations, maximum process peak memory.
+        wallTimeMs >= cpuTimeMs. Compilation uses separate bounded budgets; each benchmark
+        round gets a fresh evaluation budget.'
+    RunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        requestId:
+          $ref: '#/components/schemas/Identifier'
+        taskVersionId:
+          $ref: '#/components/schemas/Identifier'
+        language:
+          $ref: '#/components/schemas/Language'
+        taskFiles:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              path:
+                $ref: '#/components/schemas/RelativePath'
+              type:
+                type: string
+                enum:
+                - EDITABLE
+                - READ_ONLY
+                - VISIBLE_TEST
+              content:
+                type: string
+                maxLength: 131072
+                description: UTF-8 host-authored task file. Enforce 131072 bytes per
+                  file and 1048576 bytes per assembled project in addition to character
+                  limits.
+            required:
+            - path
+            - type
+            - content
+          minItems: 2
+          maxItems: 50
+        submissionFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionFile'
+          minItems: 0
+          maxItems: 50
+        testSuites:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              suiteId:
+                $ref: '#/components/schemas/Identifier'
+              visibility:
+                type: string
+                const: PUBLIC
+              testFilePaths:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RelativePath'
+                minItems: 1
+                maxItems: 50
+              execution:
+                $ref: '#/components/schemas/ExecutionProfile'
+              cases:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestCaseDefinition'
+                minItems: 1
+                maxItems: 50
+            required:
+            - suiteId
+            - visibility
+            - testFilePaths
+            - execution
+            - cases
+            description: A host-defined test target. Its test paths must match its
+              visibility. Total cases across suites is at most 50. No client shell
+              commands or dependency installation.
+          minItems: 1
+          maxItems: 50
+        limits:
+          $ref: '#/components/schemas/Limits'
+      required:
+      - requestId
+      - taskVersionId
+      - language
+      - taskFiles
+      - submissionFiles
+      - testSuites
+      - limits
+      description: One selected language and its independent host manifest. Backend
+        sends authoritative files and overlays participant edits only on EDITABLE
+        paths. Global uniqueness, language/profile matching and file references are
+        normative semantic checks.
+    SubmitRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        submissionId:
+          $ref: '#/components/schemas/Identifier'
+        taskVersionId:
+          $ref: '#/components/schemas/Identifier'
+        language:
+          $ref: '#/components/schemas/Language'
+        taskFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskFile'
+          minItems: 2
+          maxItems: 50
+        submissionFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionFile'
+          minItems: 0
+          maxItems: 50
+        testSuites:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestSuite'
+          minItems: 1
+          maxItems: 50
+        limits:
+          $ref: '#/components/schemas/Limits'
+      required:
+      - submissionId
+      - taskVersionId
+      - language
+      - taskFiles
+      - submissionFiles
+      - testSuites
+      - limits
+      description: One selected language and its independent host manifest. Backend
+        sends authoritative files and overlays participant edits only on EDITABLE
+        paths. Global uniqueness, language/profile matching and file references are
+        normative semantic checks.
+    PublicTestResult:
+      type: object
+      additionalProperties: false
+      properties:
+        testId:
+          $ref: '#/components/schemas/Identifier'
+        suiteId:
+          $ref: '#/components/schemas/Identifier'
+        visibility:
+          type: string
+          const: PUBLIC
+        status:
+          $ref: '#/components/schemas/TestVerdict'
+        input: &id009
+          description: Any JSON value, including null. At most 100000 UTF-8 bytes
+            in compact serialization; no non-finite numbers.
+        expectedOutput: *id009
+        actualOutput: *id009
+        stdout:
+          $ref: '#/components/schemas/Diagnostics'
+        stderr:
+          $ref: '#/components/schemas/Diagnostics'
+      required:
+      - testId
+      - suiteId
+      - visibility
+      - status
+      - input
+      - expectedOutput
+      - actualOutput
+      - stdout
+      - stderr
+      description: Optional diagnostics are represented by null when omitted by host
+        tests or not safely attributable. Status is mandatory. Every schema field
+        is always present.
+    HiddenTestResult:
+      type: object
+      additionalProperties: false
+      properties:
+        testId:
+          $ref: '#/components/schemas/Identifier'
+        suiteId:
+          $ref: '#/components/schemas/Identifier'
+        visibility:
+          type: string
+          const: HIDDEN
+        status:
+          $ref: '#/components/schemas/TestVerdict'
+        input:
+          type: 'null'
+        expectedOutput:
+          type: 'null'
+        actualOutput:
+          type: 'null'
+        stdout:
+          type: 'null'
+        stderr:
+          type: 'null'
+      required:
+      - testId
+      - suiteId
+      - visibility
+      - status
+      - input
+      - expectedOutput
+      - actualOutput
+      - stdout
+      - stderr
+    TestResult:
+      oneOf:
+      - $ref: '#/components/schemas/PublicTestResult'
+      - $ref: '#/components/schemas/HiddenTestResult'
+    HarnessRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        testId:
+          $ref: '#/components/schemas/Identifier'
+        status:
+          type: string
+          enum:
+          - ACCEPTED
+          - WRONG_ANSWER
+          - RUNTIME_ERROR
+        input: *id009
+        expectedOutput: *id009
+        actualOutput: *id009
+      required:
+      - testId
+      - status
+      description: 'Host test report inside the sandbox: one UTF-8 NDJSON record per
+        declared case on the dedicated report channel. Omitted optional values become
+        null. This report is not a trusted sandbox escape boundary; see gradingIntegrity.'
+    BenchmarkMetrics:
+      type: object
+      additionalProperties: false
+      properties:
+        runtimeMs:
+          type: number
+          minimum: 0
+          description: Median sum of externally measured sandbox CPU times across
+            all suites per measured round. Includes host test runner and language
+            startup overhead; excludes compilation and queueing.
+        sandboxCpuTimeMs:
+          type: number
+          minimum: 0
+          description: Same external CPU median as runtimeMs in this revision; retained
+            as an explicit source field.
+        peakMemoryBytes:
+          type: integer
+          minimum: 0
+        roundRuntimeMs:
+          type: array
+          items:
+            type: number
+            minimum: 0
+          minItems: 5
+          maxItems: 5
+        roundSandboxCpuTimeMs:
+          type: array
+          items:
+            type: number
+            minimum: 0
+          minItems: 5
+          maxItems: 5
+        roundPeakMemoryBytes:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+          minItems: 5
+          maxItems: 5
+      required:
+      - runtimeMs
+      - sandboxCpuTimeMs
+      - peakMemoryBytes
+      - roundRuntimeMs
+      - roundSandboxCpuTimeMs
+      - roundPeakMemoryBytes
+    Benchmark:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum:
+          - NOT_REQUESTED
+          - SKIPPED
+          - SUCCEEDED
+          - FAILED
+        reason:
+          anyOf:
+          - type: string
+            enum:
+            - RUN_OPERATION
+            - EVALUATION_NOT_ACCEPTED
+            - MEASUREMENT_UNAVAILABLE
+            - BUDGET_EXCEEDED
+            - INFRASTRUCTURE_FAILURE
+          - type: 'null'
+        warmupRounds:
+          type: integer
+          const: 2
+        measuredRounds:
+          type: integer
+          const: 5
+        measurementScope:
+          type: string
+          const: ALL_TEST_SUITES
+        measurementTrust:
+          type: string
+          const: SANDBOX_EXTERNAL
+        metrics:
+          anyOf:
+          - $ref: '#/components/schemas/BenchmarkMetrics'
+          - type: 'null'
+      required:
+      - state
+      - reason
+      - warmupRounds
+      - measuredRounds
+      - measurementScope
+      - measurementTrust
+      - metrics
+      allOf:
+      - if:
+          properties:
+            state:
+              const: SUCCEEDED
+        then:
+          properties:
+            reason:
+              type: 'null'
+            metrics:
+              $ref: '#/components/schemas/BenchmarkMetrics'
+      - if:
+          properties:
+            state:
+              enum:
+              - NOT_REQUESTED
+              - SKIPPED
+              - FAILED
+        then:
+          properties:
+            metrics:
+              type: 'null'
+            reason:
+              type: string
+    RunResult:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '#/components/schemas/Verdict'
+        passedTests:
+          type: integer
+          minimum: 0
+          maximum: 50
+        totalTests:
+          type: integer
+          minimum: 1
+          maximum: 50
+        testResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicTestResult'
+          minItems: 1
+          maxItems: 50
+        compileOutput:
+          $ref: '#/components/schemas/Diagnostics'
+        message:
+          anyOf:
+          - type: string
+            maxLength: 1024
+          - type: 'null'
+        sandboxCpuTimeMs:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        sandboxPeakMemoryBytes:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        benchmark:
+          $ref: '#/components/schemas/Benchmark'
+        gradingIntegrity:
+          type: string
+          const: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+      required:
+      - status
+      - passedTests
+      - totalTests
+      - testResults
+      - compileOutput
+      - message
+      - sandboxCpuTimeMs
+      - sandboxPeakMemoryBytes
+      - benchmark
+      - gradingIntegrity
+      description: One result per declared case in suite/case request order. Host
+        assertions determine correctness; runner verifies report completeness and
+        enforces resources externally. Host test code sharing a sandbox with participant
+        code is not tamper-proof.
+    EvaluationResult:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '#/components/schemas/Verdict'
+        passedTests:
+          type: integer
+          minimum: 0
+          maximum: 50
+        totalTests:
+          type: integer
+          minimum: 1
+          maximum: 50
+        testResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestResult'
+          minItems: 1
+          maxItems: 50
+        compileOutput:
+          $ref: '#/components/schemas/Diagnostics'
+        message:
+          anyOf:
+          - type: string
+            maxLength: 1024
+          - type: 'null'
+        sandboxCpuTimeMs:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        sandboxPeakMemoryBytes:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        benchmark:
+          $ref: '#/components/schemas/Benchmark'
+        gradingIntegrity:
+          type: string
+          const: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+      required:
+      - status
+      - passedTests
+      - totalTests
+      - testResults
+      - compileOutput
+      - message
+      - sandboxCpuTimeMs
+      - sandboxPeakMemoryBytes
+      - benchmark
+      - gradingIntegrity
+      description: One result per declared case in suite/case request order. Host
+        assertions determine correctness; runner verifies report completeness and
+        enforces resources externally. Host test code sharing a sandbox with participant
+        code is not tamper-proof.
+    RunResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        requestId:
+          $ref: '#/components/schemas/Identifier'
+        taskVersionId:
+          $ref: '#/components/schemas/Identifier'
+        contractVersion:
+          type: string
+          const: 1.0.0-draft.2
+        result:
+          $ref: '#/components/schemas/RunResult'
+      required:
+      - requestId
+      - taskVersionId
+      - contractVersion
+      - result
+    Job:
+      type: object
+      additionalProperties: false
+      properties:
+        submissionId:
+          $ref: '#/components/schemas/Identifier'
+        taskVersionId:
+          $ref: '#/components/schemas/Identifier'
+        contractVersion:
+          type: string
+          const: 1.0.0-draft.2
+        state:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - FINISHED
+          - FAILED
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp ending in Z.
+        startedAt:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp ending in Z.
+          - type: 'null'
+        finishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp ending in Z.
+          - type: 'null'
+        expiresAt:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp ending in Z.
+          - type: 'null'
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/EvaluationResult'
+          - type: 'null'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/Error'
+          - type: 'null'
+      required:
+      - submissionId
+      - taskVersionId
+      - contractVersion
+      - state
+      - createdAt
+      - startedAt
+      - finishedAt
+      - expiresAt
+      - result
+      - error
+      allOf:
+      - if:
+          properties:
+            state:
+              const: QUEUED
+        then:
+          properties:
+            startedAt:
+              type: 'null'
+            finishedAt:
+              type: 'null'
+            expiresAt:
+              type: 'null'
+            result:
+              type: 'null'
+            error:
+              type: 'null'
+      - if:
+          properties:
+            state:
+              const: RUNNING
+        then:
+          properties:
+            startedAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            finishedAt:
+              type: 'null'
+            expiresAt:
+              type: 'null'
+            result:
+              type: 'null'
+            error:
+              type: 'null'
+      - if:
+          properties:
+            state:
+              const: FINISHED
+        then:
+          properties:
+            startedAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            finishedAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            expiresAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            result:
+              $ref: '#/components/schemas/EvaluationResult'
+            error:
+              type: 'null'
+      - if:
+          properties:
+            state:
+              const: FAILED
+        then:
+          properties:
+            finishedAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            expiresAt:
+              type: string
+              format: date-time
+              description: UTC RFC 3339 timestamp ending in Z.
+            result:
+              type: 'null'
+            error:
+              $ref: '#/components/schemas/Error'
+    LanguageCapability:
+      type: object
+      additionalProperties: false
+      properties:
+        language:
+          $ref: '#/components/schemas/Language'
+        version:
+          type: string
+          minLength: 1
+        languageStandard:
+          type: string
+          minLength: 1
+        executionProfiles:
+          type: array
+          items:
+            type: string
+            enum:
+            - JAVA_MAIN
+            - CPP_MAIN
+            - PYTHON_SCRIPT
+          minItems: 1
+          maxItems: 3
+        supportedFileTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileType'
+          minItems: 4
+          maxItems: 4
+        supportsMultipleFiles:
+          type: boolean
+          const: true
+        builtinLibraries:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 0
+          maxItems: 50
+      required:
+      - language
+      - version
+      - languageStandard
+      - executionProfiles
+      - supportedFileTypes
+      - supportsMultipleFiles
+      - builtinLibraries
+      description: Only verified deployed languages are advertised; planned support
+        is not readiness. Version is the actual compiler/interpreter version. No on-demand
+        library installation.
+    Capabilities:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          const: 1.0.0-draft.2
+        environmentId:
+          $ref: '#/components/schemas/Identifier'
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/LanguageCapability'
+          minItems: 1
+          maxItems: 3
+        defaultLimits:
+          $ref: '#/components/schemas/Limits'
+        maxLimits:
+          $ref: '#/components/schemas/Limits'
+        compilationLimits:
+          type: object
+          additionalProperties: false
+          properties:
+            cpuTimeMs:
+              type: integer
+              minimum: 1
+            wallTimeMs:
+              type: integer
+              minimum: 1
+            memoryLimitBytes:
+              type: integer
+              minimum: 1
+          required:
+          - cpuTimeMs
+          - wallTimeMs
+          - memoryLimitBytes
+        maxRequestBytes:
+          type: integer
+          const: 2000000
+        maxTests:
+          type: integer
+          const: 50
+        maxStdoutBytes:
+          type: integer
+          const: 65536
+        maxStderrBytes:
+          type: integer
+          const: 65536
+        maxCompileOutputBytes:
+          type: integer
+          const: 65536
+        queue:
+          type: object
+          additionalProperties: false
+          properties:
+            maxConcurrentExecutions:
+              type: integer
+              const: 1
+            maxPendingExecutions:
+              type: integer
+              const: 10
+            maxStoredJobs:
+              type: integer
+              const: 100
+            resultRetentionSeconds:
+              type: integer
+              const: 1800
+            durable:
+              type: boolean
+              const: false
+          required:
+          - maxConcurrentExecutions
+          - maxPendingExecutions
+          - maxStoredJobs
+          - resultRetentionSeconds
+          - durable
+        runDeadlineMs:
+          type: integer
+          const: 60000
+        jobDeadlineMs:
+          type: integer
+          const: 180000
+        benchmarkPolicy:
+          type: object
+          additionalProperties: false
+          properties:
+            enabledForAcceptedSubmissions:
+              type: boolean
+              const: true
+            warmupRounds:
+              type: integer
+              const: 2
+            measuredRounds:
+              type: integer
+              const: 5
+            roundLimitScope:
+              type: string
+              const: ALL_SELECTED_SUITES
+            measurementTrust:
+              type: string
+              const: SANDBOX_EXTERNAL
+          required:
+          - enabledForAcceptedSubmissions
+          - warmupRounds
+          - measuredRounds
+          - roundLimitScope
+          - measurementTrust
+        maxTaskFiles:
+          type: integer
+          const: 50
+        maxFileBytes:
+          type: integer
+          const: 131072
+        maxProjectBytes:
+          type: integer
+          const: 1048576
+        maxDiagnosticValueBytes:
+          type: integer
+          const: 100000
+        maxReportBytes:
+          type: integer
+          const: 1000000
+        maxReportLineBytes:
+          type: integer
+          const: 310000
+        maxPathCharacters:
+          type: integer
+          const: 240
+        reportProtocol:
+          type: string
+          const: CODELOBBY_NDJSON_V1
+        gradingIntegrity:
+          type: string
+          const: HOST_TESTS_IN_PARTICIPANT_SANDBOX
+        limitsScope:
+          type: string
+          const: ALL_SELECTED_SUITES
+      required:
+      - contractVersion
+      - environmentId
+      - languages
+      - defaultLimits
+      - maxLimits
+      - compilationLimits
+      - maxRequestBytes
+      - maxTests
+      - maxStdoutBytes
+      - maxStderrBytes
+      - maxCompileOutputBytes
+      - queue
+      - runDeadlineMs
+      - jobDeadlineMs
+      - benchmarkPolicy
+      - maxTaskFiles
+      - maxFileBytes
+      - maxProjectBytes
+      - maxDiagnosticValueBytes
+      - maxReportBytes
+      - maxReportLineBytes
+      - maxPathCharacters
+      - reportProtocol
+      - gradingIntegrity
+      - limitsScope
+  responses:
+    '400':
+      description: INVALID_REQUEST
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INVALID_REQUEST
+            message: Invalid request.
+            retryable: false
+    '401':
+      description: UNAUTHORIZED
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Unauthorized.
+            retryable: false
+    '404':
+      description: JOB_NOT_FOUND
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: JOB_NOT_FOUND
+            message: Job not found.
+            retryable: false
+    '409':
+      description: SUBMISSION_ID_CONFLICT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SUBMISSION_ID_CONFLICT
+            message: Submission id conflict.
+            retryable: false
+    '413':
+      description: PAYLOAD_TOO_LARGE
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: PAYLOAD_TOO_LARGE
+            message: Payload too large.
+            retryable: false
+    '415':
+      description: INVALID_REQUEST
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INVALID_REQUEST
+            message: Invalid request.
+            retryable: false
+    '429':
+      description: QUEUE_CAPACITY_EXCEEDED
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: QUEUE_CAPACITY_EXCEEDED
+            message: Queue capacity exceeded.
+            retryable: true
+      headers:
+        Retry-After:
+          description: Suggested minimum retry delay in whole seconds.
+          schema:
+            type: integer
+            minimum: 1
+          example: 1
+    '503':
+      description: EXECUTION_UNAVAILABLE
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: EXECUTION_UNAVAILABLE
+            message: Execution unavailable.
+            retryable: true
+      headers:
+        Retry-After:
+          description: Suggested minimum retry delay in whole seconds.
+          schema:
+            type: integer
+            minimum: 1
+          example: 1
+    '504':
+      description: REQUEST_DEADLINE_EXCEEDED
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_DEADLINE_EXCEEDED
+            message: Request deadline exceeded.
+            retryable: true
+    '500':
+      description: INTERNAL_SERVER_ERROR
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_SERVER_ERROR
+            message: Internal server error.
+            retryable: false

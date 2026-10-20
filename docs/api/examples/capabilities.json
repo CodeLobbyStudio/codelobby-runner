@@ -1,0 +1,100 @@
+{
+  "contractVersion": "1.0.0-draft.2",
+  "environmentId": "multilanguage-judge0-profile-v1",
+  "languages": [
+    {
+      "language": "JAVA",
+      "version": "OpenJDK 21.0.7",
+      "languageStandard": "Java 21",
+      "executionProfiles": [
+        "JAVA_MAIN"
+      ],
+      "supportedFileTypes": [
+        "EDITABLE",
+        "READ_ONLY",
+        "VISIBLE_TEST",
+        "HIDDEN_TEST"
+      ],
+      "supportsMultipleFiles": true,
+      "builtinLibraries": []
+    },
+    {
+      "language": "CPP",
+      "version": "GCC 13.2.0",
+      "languageStandard": "C++17",
+      "executionProfiles": [
+        "CPP_MAIN"
+      ],
+      "supportedFileTypes": [
+        "EDITABLE",
+        "READ_ONLY",
+        "VISIBLE_TEST",
+        "HIDDEN_TEST"
+      ],
+      "supportsMultipleFiles": true,
+      "builtinLibraries": []
+    },
+    {
+      "language": "PYTHON",
+      "version": "CPython 3.12.9",
+      "languageStandard": "Python 3.12",
+      "executionProfiles": [
+        "PYTHON_SCRIPT"
+      ],
+      "supportedFileTypes": [
+        "EDITABLE",
+        "READ_ONLY",
+        "VISIBLE_TEST",
+        "HIDDEN_TEST"
+      ],
+      "supportsMultipleFiles": true,
+      "builtinLibraries": []
+    }
+  ],
+  "defaultLimits": {
+    "cpuTimeMs": 2000,
+    "wallTimeMs": 5000,
+    "memoryLimitBytes": 128000000
+  },
+  "maxLimits": {
+    "cpuTimeMs": 2000,
+    "wallTimeMs": 5000,
+    "memoryLimitBytes": 128000000
+  },
+  "compilationLimits": {
+    "cpuTimeMs": 10000,
+    "wallTimeMs": 20000,
+    "memoryLimitBytes": 512000000
+  },
+  "maxRequestBytes": 2000000,
+  "maxTests": 50,
+  "maxStdoutBytes": 65536,
+  "maxStderrBytes": 65536,
+  "maxCompileOutputBytes": 65536,
+  "queue": {
+    "maxConcurrentExecutions": 1,
+    "maxPendingExecutions": 10,
+    "maxStoredJobs": 100,
+    "resultRetentionSeconds": 1800,
+    "durable": false
+  },
+  "runDeadlineMs": 60000,
+  "jobDeadlineMs": 180000,
+  "benchmarkPolicy": {
+    "enabledForAcceptedSubmissions": true,
+    "warmupRounds": 2,
+    "measuredRounds": 5,
+    "roundLimitScope": "ALL_SELECTED_SUITES",
+    "measurementTrust": "SANDBOX_EXTERNAL"
+  },
+  "maxTaskFiles": 50,
+  "maxFileBytes": 131072,
+  "maxProjectBytes": 1048576,
+  "maxDiagnosticValueBytes": 100000,
+  "maxPathCharacters": 240,
+  "reportProtocol": "CODELOBBY_NDJSON_V1",
+  "gradingIntegrity": "HOST_TESTS_IN_PARTICIPANT_SANDBOX",
+  "limitsScope": "ALL_SELECTED_SUITES",
+  "maxReportBytes": 1000000,
+  "maxReportLineBytes": 310000
+}

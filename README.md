@@ -25,6 +25,15 @@ internal input/result records. It does not compile or execute participant code.
 There are no Run or Submit endpoints yet. The execution API contract is tracked
 in issue #5; the records in `model` do not define that contract.
 
+## Proposed internal API contract
+
+The multi-file evaluation API proposal is documented in
+[docs/api/CONTRACT.md](docs/api/CONTRACT.md), with an
+[OpenAPI specification](docs/api/openapi.yaml) and
+[JSON examples](docs/api/examples/). It covers host-defined tasks for Java, C++
+and Python. This is a contract for review, not implemented execution endpoints;
+the bootstrap behavior described below is unchanged.
+
 ## Requirements
 
 - JDK 21 (both `java` and `javac` must be available)

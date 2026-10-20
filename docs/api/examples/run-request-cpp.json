@@ -1,0 +1,51 @@
+{
+  "requestId": "run-cpp-001",
+  "taskVersionId": "task-v2",
+  "language": "CPP",
+  "taskFiles": [
+    {
+      "path": "src/solution.cpp",
+      "type": "EDITABLE",
+      "content": "int twice(int value) { return 0; }\n"
+    },
+    {
+      "path": "include/solution.h",
+      "type": "READ_ONLY",
+      "content": "#pragma once\nint twice(int value);\n"
+    },
+    {
+      "path": "tests/public_tests.cpp",
+      "type": "VISIBLE_TEST",
+      "content": "#include \"solution.h\"\n#include <cstdlib>\n#include <fstream>\nint main() {\n    int actual = twice(4);\n    std::ofstream report(std::getenv(\"CODELOBBY_REPORT_PATH\"));\n    report << \"{\\\"testId\\\":\\\"cpp-public-1\\\",\\\"status\\\":\\\"\"\n           << (actual == 8 ? \"ACCEPTED\" : \"WRONG_ANSWER\")\n           << \"\\\",\\\"input\\\":4,\\\"expectedOutput\\\":8,\\\"actualOutput\\\":\" << actual << \"}\\n\";\n}\n"
+    }
+  ],
+  "submissionFiles": [
+    {
+      "path": "src/solution.cpp",
+      "content": "int twice(int value) { return value * 2; }\n"
+    }
+  ],
+  "testSuites": [
+    {
+      "suiteId": "cpp-public",
+      "visibility": "PUBLIC",
+      "testFilePaths": [
+        "tests/public_tests.cpp"
+      ],
+      "execution": {
+        "profile": "CPP_MAIN",
+        "mainSourcePath": "tests/public_tests.cpp"
+      },
+      "cases": [
+        {
+          "testId": "cpp-public-1"
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "cpuTimeMs": 2000,
+    "wallTimeMs": 5000,
+    "memoryLimitBytes": 128000000
+  }
+}

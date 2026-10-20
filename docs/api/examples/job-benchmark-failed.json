@@ -1,0 +1,56 @@
+{
+  "submissionId": "submission-001",
+  "taskVersionId": "task-v2",
+  "contractVersion": "1.0.0-draft.2",
+  "state": "FINISHED",
+  "createdAt": "2026-10-20T10:00:00Z",
+  "startedAt": "2026-10-20T10:00:01Z",
+  "finishedAt": "2026-10-20T10:00:04Z",
+  "expiresAt": "2026-10-20T10:30:04Z",
+  "result": {
+    "status": "ACCEPTED",
+    "passedTests": 2,
+    "totalTests": 2,
+    "testResults": [
+      {
+        "testId": "public-1",
+        "suiteId": "public-suite",
+        "visibility": "PUBLIC",
+        "status": "ACCEPTED",
+        "input": {
+          "text": "codelobby"
+        },
+        "expectedOutput": 3,
+        "actualOutput": 3,
+        "stdout": null,
+        "stderr": null
+      },
+      {
+        "testId": "hidden-1",
+        "suiteId": "hidden-suite",
+        "visibility": "HIDDEN",
+        "status": "ACCEPTED",
+        "input": null,
+        "expectedOutput": null,
+        "actualOutput": null,
+        "stdout": null,
+        "stderr": null
+      }
+    ],
+    "compileOutput": null,
+    "message": null,
+    "sandboxCpuTimeMs": 180.0,
+    "sandboxPeakMemoryBytes": 42000000,
+    "benchmark": {
+      "state": "FAILED",
+      "reason": "MEASUREMENT_UNAVAILABLE",
+      "warmupRounds": 2,
+      "measuredRounds": 5,
+      "measurementScope": "ALL_TEST_SUITES",
+      "measurementTrust": "SANDBOX_EXTERNAL",
+      "metrics": null
+    },
+    "gradingIntegrity": "HOST_TESTS_IN_PARTICIPANT_SANDBOX"
+  },
+  "error": null
+}

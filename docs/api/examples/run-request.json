@@ -1,0 +1,51 @@
+{
+  "requestId": "run-001",
+  "taskVersionId": "task-v2",
+  "language": "JAVA",
+  "taskFiles": [
+    {
+      "path": "src/Solution.java",
+      "type": "EDITABLE",
+      "content": "public class Solution {\n    public static int countVowels(String text) { return 0; }\n}\n"
+    },
+    {
+      "path": "src/Helpers.java",
+      "type": "READ_ONLY",
+      "content": "public class Helpers {\n    public static int count(String text) {\n        int n = 0;\n        for (char c : text.toCharArray()) if (\"aeiou\".indexOf(c) >= 0) n++;\n        return n;\n    }\n}\n"
+    },
+    {
+      "path": "tests/PublicTests.java",
+      "type": "VISIBLE_TEST",
+      "content": "import java.nio.file.Files;\nimport java.nio.file.Path;\npublic class PublicTests {\n    public static void main(String[] args) throws Exception {\n        int actual = Solution.countVowels(\"codelobby\");\n        String status = actual == 3 ? \"ACCEPTED\" : \"WRONG_ANSWER\";\n        String record = \"{\\\"testId\\\":\\\"public-1\\\",\\\"status\\\":\\\"\" + status\n            + \"\\\",\\\"input\\\":{\\\"text\\\":\\\"codelobby\\\"},\\\"expectedOutput\\\":3,\\\"actualOutput\\\":\" + actual + \"}\\n\";\n        Files.writeString(Path.of(System.getenv(\"CODELOBBY_REPORT_PATH\")), record);\n    }\n}\n"
+    }
+  ],
+  "submissionFiles": [
+    {
+      "path": "src/Solution.java",
+      "content": "public class Solution {\n    public static int countVowels(String text) { return Helpers.count(text); }\n}\n"
+    }
+  ],
+  "testSuites": [
+    {
+      "suiteId": "public-suite",
+      "visibility": "PUBLIC",
+      "testFilePaths": [
+        "tests/PublicTests.java"
+      ],
+      "execution": {
+        "profile": "JAVA_MAIN",
+        "mainClass": "PublicTests"
+      },
+      "cases": [
+        {
+          "testId": "public-1"
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "cpuTimeMs": 2000,
+    "wallTimeMs": 5000,
+    "memoryLimitBytes": 128000000
+  }
+}

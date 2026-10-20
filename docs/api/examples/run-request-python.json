@@ -1,0 +1,51 @@
+{
+  "requestId": "run-python-001",
+  "taskVersionId": "task-v2",
+  "language": "PYTHON",
+  "taskFiles": [
+    {
+      "path": "src/solution.py",
+      "type": "EDITABLE",
+      "content": "def square(value):\n    return 0\n"
+    },
+    {
+      "path": "src/helpers.py",
+      "type": "READ_ONLY",
+      "content": "def identity(value):\n    return value\n"
+    },
+    {
+      "path": "tests/public_tests.py",
+      "type": "VISIBLE_TEST",
+      "content": "import json, os, sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path.cwd() / \"src\"))\nfrom solution import square\nactual = square(4)\nrecord = {\"testId\": \"py-public-1\", \"status\": \"ACCEPTED\" if actual == 16 else \"WRONG_ANSWER\", \"input\": 4, \"expectedOutput\": 16, \"actualOutput\": actual}\nPath(os.environ[\"CODELOBBY_REPORT_PATH\"]).write_text(json.dumps(record) + \"\\n\", encoding=\"utf-8\")\n"
+    }
+  ],
+  "submissionFiles": [
+    {
+      "path": "src/solution.py",
+      "content": "def square(value):\n    return value * value\n"
+    }
+  ],
+  "testSuites": [
+    {
+      "suiteId": "py-public",
+      "visibility": "PUBLIC",
+      "testFilePaths": [
+        "tests/public_tests.py"
+      ],
+      "execution": {
+        "profile": "PYTHON_SCRIPT",
+        "scriptPath": "tests/public_tests.py"
+      },
+      "cases": [
+        {
+          "testId": "py-public-1"
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "cpuTimeMs": 2000,
+    "wallTimeMs": 5000,
+    "memoryLimitBytes": 128000000
+  }
+}

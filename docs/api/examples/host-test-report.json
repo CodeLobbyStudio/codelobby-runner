@@ -1,0 +1,9 @@
+{
+  "testId": "public-1",
+  "status": "ACCEPTED",
+  "input": {
+    "text": "codelobby"
+  },
+  "expectedOutput": 3,
+  "actualOutput": 3
+}

@@ -1,0 +1,12 @@
+{
+  "submissionId": "submission-001",
+  "taskVersionId": "task-v2",
+  "contractVersion": "1.0.0-draft.2",
+  "state": "QUEUED",
+  "createdAt": "2026-10-20T10:00:00Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "expiresAt": null,
+  "result": null,
+  "error": null
+}

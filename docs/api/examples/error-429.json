@@ -1,0 +1,5 @@
+{
+  "code": "QUEUE_CAPACITY_EXCEEDED",
+  "message": "Queue capacity exceeded.",
+  "retryable": true
+}

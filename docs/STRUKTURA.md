@@ -20,6 +20,14 @@ Pozostałe katalogi projektu:
 zgodnie z kontraktem z zadania #5. `ExecutionResult` pozostaje tymczasowym
 modelem szkieletu i nie określa docelowego formatu wyniku HTTP ani werdyktów.
 
+`RunRequest` zbiera identyfikatory, `Language`, pliki, listę `TestSuite` oraz
+`ExecutionLimits`. Zestaw testowy zawiera `TestVisibility`, deklaracje
+`TestCaseDefinition` i metadane punktu wejścia: `JavaExecution`, `CppExecution`
+lub `PythonExecution`, wybrane przez pole JSON `profile` interfejsu
+`ExecutionProfile`. Są to wyłącznie modele danych. Nie dodają obsługi wykonania
+tych języków ani walidacji reguł między polami, ścieżek i limitów — te etapy
+zostaną dodane osobno.
+
 Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
 integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania
 i uruchomienia znajdują się w głównym README.

@@ -16,8 +16,9 @@ Pozostałe katalogi projektu:
 - `docs/` — opis działania i decyzji technicznych
 
 `RunnerApplication` jest punktem startowym. Puste pakiety opisano plikami
-`package-info.java`. Modele `SubmissionInput` i `ExecutionResult` są wyłącznie
-wewnętrznym szkieletem; nie ustalają kontraktu HTTP ani werdyktów z zadania #5.
+`package-info.java`. `TaskFile`, `SubmissionFile` i `FileType` opisują pliki
+zgodnie z kontraktem z zadania #5. `ExecutionResult` pozostaje tymczasowym
+modelem szkieletu i nie określa docelowego formatu wyniku HTTP ani werdyktów.
 
 Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
 integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania

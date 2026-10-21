@@ -28,6 +28,13 @@ lub `PythonExecution`, wybrane przez pole JSON `profile` interfejsu
 tych języków ani walidacji reguł między polami, ścieżek i limitów — te etapy
 zostaną dodane osobno.
 
+`Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
+przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje
+wynik przypadku i diagnostykę jako wartości JSON dowolnego typu. Dla `HIDDEN`
+nie pozwala utworzyć wyniku zawierającego dane diagnostyczne inne niż `null`.
+To zabezpieczenie modelu, a nie kompletna obsługa filtrowania raportów i logów.
+Pełna odpowiedź Run i jej podsumowanie będą dodane w kolejnym etapie.
+
 Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
 integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania
 i uruchomienia znajdują się w głównym README.

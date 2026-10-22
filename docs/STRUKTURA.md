@@ -25,8 +25,13 @@ modelami właściwego żądania i odpowiedzi.
 `TestCaseDefinition` i metadane punktu wejścia: `JavaExecution`, `CppExecution`
 lub `PythonExecution`, wybrane przez pole JSON `profile` interfejsu
 `ExecutionProfile`. Są to wyłącznie modele danych. Nie dodają obsługi wykonania
-tych języków ani walidacji reguł między polami, ścieżek i limitów — te etapy
-zostaną dodane osobno.
+tych języków. `RunRequestValidator.validateFiles` w `core/` sprawdza bezpieczne
+ścieżki, duplikaty i kolizje plików z katalogami oraz nadpisywanie wyłącznie
+zadeklarowanych plików `EDITABLE`. Dopuszcza brak nadpisań i pustą treść
+nadpisywanego pliku. Komunikaty walidacji nie ujawniają ścieżek ani treści.
+Walidator nie jest jeszcze podłączony do HTTP. Walidacja metadanych, powiązań
+zestawów testowych, limitów rozmiaru i rzeczywistego systemu plików pozostaje
+osobnym etapem; samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje

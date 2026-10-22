@@ -17,8 +17,8 @@ Pozostałe katalogi projektu:
 
 `RunnerApplication` jest punktem startowym. Puste pakiety opisano plikami
 `package-info.java`. `TaskFile`, `SubmissionFile` i `FileType` opisują pliki
-zgodnie z kontraktem z zadania #5. `ExecutionResult` pozostaje tymczasowym
-modelem szkieletu i nie określa docelowego formatu wyniku HTTP ani werdyktów.
+zgodnie z kontraktem z zadania #5. Tymczasowe modele szkieletu zastąpiono
+modelami właściwego żądania i odpowiedzi.
 
 `RunRequest` zbiera identyfikatory, `Language`, pliki, listę `TestSuite` oraz
 `ExecutionLimits`. Zestaw testowy zawiera `TestVisibility`, deklaracje
@@ -33,7 +33,12 @@ przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje
 wynik przypadku i diagnostykę jako wartości JSON dowolnego typu. Dla `HIDDEN`
 nie pozwala utworzyć wyniku zawierającego dane diagnostyczne inne niż `null`.
 To zabezpieczenie modelu, a nie kompletna obsługa filtrowania raportów i logów.
-Pełna odpowiedź Run i jej podsumowanie będą dodane w kolejnym etapie.
+`RunResponse` zawiera identyfikatory, wersję kontraktu i podsumowanie `RunResult`.
+Podsumowanie przyjmuje wyłącznie jawne wyniki i pilnuje zgodności liczników.
+`Benchmark` i `BenchmarkMetrics` opisują politykę oraz dane pomiarowe, z enumami
+stanu, przyczyny, zakresu i źródła pomiaru. `GradingIntegrity` opisuje granicę
+zaufania do oceny. Run wymaga benchmarku `NOT_REQUESTED`; same modele nie
+wykonują żadnych pomiarów. Niedostępne pomiary mają wartość `null`, nie zero.
 
 Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
 integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania

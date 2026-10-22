@@ -45,6 +45,12 @@ stanu, przyczyny, zakresu i źródła pomiaru. `GradingIntegrity` opisuje granic
 zaufania do oceny. Run wymaga benchmarku `NOT_REQUESTED`; same modele nie
 wykonują żadnych pomiarów. Niedostępne pomiary mają wartość `null`, nie zero.
 
+W kontrakcie `VISIBLE_TEST` oznacza publiczny opis i wynik, a nie dostęp do kodu
+testu. Backend przekazuje oba rodzaje kodu testowego tylko runnerowi i przechowuje
+opisy publiczne łączone z wynikami przez `testId`. Modele nie wymagają dodatkowych
+pól. Ochrona diagnostyki przed ujawnieniem kodu testów będzie częścią wykonania;
+samo ukrycie plików w przeglądarce nie zapewnia tajności we wspólnym sandboxie.
+
 Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
 integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania
 i uruchomienia znajdują się w głównym README.

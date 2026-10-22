@@ -34,6 +34,11 @@ The multi-file evaluation API proposal is documented in
 and Python. This is a contract for review, not implemented execution endpoints;
 the bootstrap behavior described below is unchanged.
 
+Public test visibility means public descriptions and results, not access to test
+source. Both `VISIBLE_TEST` and `HIDDEN_TEST` source files are internal to the
+backend/runner flow. Backend stores public descriptions and joins results by
+`testId`; see the [example visibility notes](docs/api/examples/README.md).
+
 ## Requirements
 
 - JDK 21 (both `java` and `javac` must be available)

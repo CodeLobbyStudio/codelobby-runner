@@ -5,6 +5,8 @@ info:
   description: 'Revised unpublished v1 draft for host-defined multi-file tasks in
     JAVA, CPP and PYTHON. File roles: EDITABLE, READ_ONLY, VISIBLE_TEST, HIDDEN_TEST.
     Run evaluates all public test suites; Submit evaluates public and hidden suites.
+    Public means visible descriptions/results, never test-source access. Both test
+    roles remain backend-to-runner only; backend owns descriptions joined by testId.
     See CONTRACT.md for normative assembly, execution, report integrity and redaction
     rules. Not an implementation claim.'
 servers:
@@ -780,7 +782,9 @@ components:
       - type: string
         maxLength: 65536
         description: At most 65536 UTF-8 bytes. Null means unavailable or redacted,
-          not an empty stream.
+          not an empty stream. Exclude public and hidden test source, test paths,
+          assertion implementations and harness traces. Return null when disclosure-safe
+          separation is not reliable; shared-sandbox runtime secrecy is not guaranteed.
       - type: 'null'
     Error:
       type: object
@@ -819,6 +823,9 @@ components:
       - CPP
       - PYTHON
     FileType:
+      description: EDITABLE and READ_ONLY source may be shown to participants.
+        VISIBLE_TEST identifies public feedback, not visible source. Both VISIBLE_TEST
+        and HIDDEN_TEST source are backend-to-runner only and cannot be overridden.
       type: string
       enum:
       - EDITABLE
@@ -833,6 +840,8 @@ components:
       description: Canonical POSIX relative path. Additional traversal, reserved-name,
         case-fold collision and sandbox-root checks in CONTRACT.md are mandatory.
     TaskFile:
+      description: Authoritative internal file. Backend must omit both test-source
+        roles from participant APIs, downloads and browser payloads.
       type: object
       additionalProperties: false
       properties:
@@ -1066,7 +1075,9 @@ components:
       description: One selected language and its independent host manifest. Backend
         sends authoritative files and overlays participant edits only on EDITABLE
         paths. Global uniqueness, language/profile matching and file references are
-        normative semantic checks.
+        normative semantic checks. This internal payload includes test source;
+        backend must not forward it to participant clients. Public descriptions
+        are backend-owned metadata joined to results by testId.
     SubmitRequest:
       type: object
       additionalProperties: false
@@ -1108,7 +1119,9 @@ components:
       description: One selected language and its independent host manifest. Backend
         sends authoritative files and overlays participant edits only on EDITABLE
         paths. Global uniqueness, language/profile matching and file references are
-        normative semantic checks.
+        normative semantic checks. This internal payload includes test source;
+        backend must not forward it to participant clients. Public descriptions
+        are backend-owned metadata joined to results by testId.
     PublicTestResult:
       type: object
       additionalProperties: false
@@ -1141,9 +1154,12 @@ components:
       - actualOutput
       - stdout
       - stderr
-      description: Optional diagnostics are represented by null when omitted by host
-        tests or not safely attributable. Status is mandatory. Every schema field
-        is always present.
+      description: Public feedback does not grant test-source access. Backend joins
+        its public names/descriptions by testId; no description field is sent through
+        the runner. Input/expected/actual values may be shown as public case data.
+        Omit test-source excerpts and harness implementation from all diagnostics;
+        use null when absent, unsafe or not safely attributable. Status is mandatory.
+        Every schema field is always present. Shared-sandbox runtime secrecy is limited.
     HiddenTestResult:
       type: object
       additionalProperties: false
@@ -1339,6 +1355,9 @@ components:
           maxItems: 50
         compileOutput:
           $ref: '#/components/schemas/Diagnostics'
+          description: Only sanitized public-suite diagnostics about participant-visible
+            sources; no test-source excerpts, test paths or harness implementation.
+            Null when safe separation is unreliable or hidden builds are involved.
         message:
           anyOf:
           - type: string
@@ -1396,6 +1415,9 @@ components:
           maxItems: 50
         compileOutput:
           $ref: '#/components/schemas/Diagnostics'
+          description: Only sanitized public-suite diagnostics about participant-visible
+            sources; no test-source excerpts, test paths or harness implementation.
+            Null when safe separation is unreliable or hidden builds are involved.
         message:
           anyOf:
           - type: string

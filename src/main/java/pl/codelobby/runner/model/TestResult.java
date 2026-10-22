@@ -21,7 +21,7 @@ public record TestResult(
 
         if (visibility == TestVisibility.HIDDEN
                 && (input != null || expectedOutput != null || actualOutput != null
-                || stdout != null || stderr != null)) {
+                        || stdout != null || stderr != null)) {
             throw new IllegalArgumentException("Hidden test results must not contain diagnostic data");
         }
     }

@@ -29,9 +29,16 @@ tych języków. `RunRequestValidator.validateFiles` w `core/` sprawdza bezpieczn
 ścieżki, duplikaty i kolizje plików z katalogami oraz nadpisywanie wyłącznie
 zadeklarowanych plików `EDITABLE`. Dopuszcza brak nadpisań i pustą treść
 nadpisywanego pliku. Komunikaty walidacji nie ujawniają ścieżek ani treści.
-Walidator nie jest jeszcze podłączony do HTTP. Walidacja metadanych, powiązań
-zestawów testowych, limitów rozmiaru i rzeczywistego systemu plików pozostaje
-osobnym etapem; samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami.
+`validateTestSuites` najpierw sprawdza pliki, a następnie wyłącznie publiczne,
+niepuste zestawy i przypadki z poprawnymi, unikalnymi identyfikatorami. Każdy
+`VISIBLE_TEST` musi należeć do dokładnie jednego zestawu; Run odrzuca `HIDDEN_TEST`.
+Profil musi odpowiadać językowi. W C++ i Pythonie plik startowy musi należeć do
+danego zestawu i mieć właściwe rozszerzenie. W Javie sprawdzany jest format nazwy
+klasy, bez analizy kodu i potwierdzania istnienia punktu wejścia.
+Walidator nie jest jeszcze podłączony do HTTP. Pozostałe metadane żądania, limity
+liczbowe/rozmiaru i rzeczywisty system plików wymagają osobnej walidacji; samo
+sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja profilu nie
+oznacza, że dany język jest już dostępny do wykonania w uruchomionym runnerze.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje

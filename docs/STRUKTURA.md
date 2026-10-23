@@ -35,10 +35,20 @@ niepuste zestawy i przypadki z poprawnymi, unikalnymi identyfikatorami. Każdy
 Profil musi odpowiadać językowi. W C++ i Pythonie plik startowy musi należeć do
 danego zestawu i mieć właściwe rozszerzenie. W Javie sprawdzany jest format nazwy
 klasy, bez analizy kodu i potwierdzania istnienia punktu wejścia.
-Walidator nie jest jeszcze podłączony do HTTP. Pozostałe metadane żądania, limity
-liczbowe/rozmiaru i rzeczywisty system plików wymagają osobnej walidacji; samo
-sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja profilu nie
-oznacza, że dany język jest już dostępny do wykonania w uruchomionym runnerze.
+`validate` łączy te kontrole z formatem `requestId`/`taskVersionId` i limitami CPU,
+czasu całkowitego oraz pamięci. Sprawdzane są limity liczby plików, nadpisań,
+zestawów i przypadków oraz rozmiar każdego pliku w bajtach UTF-8. Rozmiar projektu
+jest liczony po nadpisaniach, bez podwójnego doliczania oryginału. Oryginały
+i nadpisania muszą osobno spełniać limit pojedynczego pliku.
+`RequestValidationException` zawiera `ValidationErrorCode`: `INVALID_REQUEST`,
+`INVALID_SOURCE_FILES` lub `PAYLOAD_TOO_LARGE`. Komunikaty pozostają ogólne;
+mapowanie kodów na HTTP będzie osobnym etapem.
+Walidator nie jest jeszcze podłączony do HTTP. Limit całego body (2000000 bajtów)
+musi być egzekwowany podczas odczytu przez przyszłą warstwę HTTP, nie przez
+ponowną serializację obiektu. Pozostają też kontrole rzeczywistego systemu plików;
+samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja profilu
+nie oznacza dostępności danego języka w uruchomionym runnerze ani kompletnej
+walidacji rozszerzeń źródeł i istnienia klasy wejściowej w kodzie Javy.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje

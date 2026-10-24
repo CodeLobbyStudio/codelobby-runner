@@ -59,6 +59,16 @@ ustalony przez test, bez odczytywania, kompilacji czy uruchamiania źródeł. Ni
 trafia do aplikacyjnego JAR-a i nie potwierdza poprawności rozwiązania.
 `SubmissionExecutorTests` sprawdza kontraktowe scenariusze sukcesu, błędnej
 odpowiedzi i błędu kompilacji.
+`RunSubmissionUseCase` łączy walidację z `SubmissionExecutor` i przygotowaniem
+`RunResponse`: najpierw waliduje żądanie, następnie raz wywołuje wykonawcę,
+a wynik opakowuje w identyfikatory z żądania i wersję kontraktu. Odrzucone
+żądanie nie trafia do wykonawcy. Wyjątki wykonawcy są propagowane bez zamiany
+w sukces; brak wyniku jest błędem stanu. Mapowanie awarii na bezpieczne odpowiedzi
+HTTP będzie osobnym etapem. Klasa otrzymuje zależności przez konstruktor;
+nie ma jeszcze konfiguracji Spring ani endpointu. `RunSubmissionUseCaseTests`
+sprawdza pełny kształt odpowiedzi z przykładami kontraktu, korelację żądania,
+zatrzymanie błędnych żądań przed wykonaniem oraz propagację awarii. Rozdzielenie
+wewnętrznych etapów kompilacji, wykonania i oceny pozostaje do implementacji.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje

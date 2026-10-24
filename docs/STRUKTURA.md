@@ -67,8 +67,26 @@ w sukces; brak wyniku jest błędem stanu. Mapowanie awarii na bezpieczne odpowi
 HTTP będzie osobnym etapem. Klasa otrzymuje zależności przez konstruktor;
 nie ma jeszcze konfiguracji Spring ani endpointu. `RunSubmissionUseCaseTests`
 sprawdza pełny kształt odpowiedzi z przykładami kontraktu, korelację żądania,
-zatrzymanie błędnych żądań przed wykonaniem oraz propagację awarii. Rozdzielenie
-wewnętrznych etapów kompilacji, wykonania i oceny pozostaje do implementacji.
+zatrzymanie błędnych żądań przed wykonaniem oraz propagację awarii.
+
+`StagedSubmissionExecutor` implementuje `SubmissionExecutor`, rozdzielając
+`CompilationStage`, `ExecutionStage` i `EvaluationStage`. Dla każdego zestawu
+wywołuje przygotowanie celu, a uruchomienie tylko po jego sukcesie. Nieudana
+kompilacja pomija uruchomienie danego zestawu, ale nie blokuje niezależnych celów.
+Następnie ocena otrzymuje niemodyfikowalną listę `SuiteExecution` w kolejności
+żądania. Błędy infrastruktury i brak wyniku etapu przerywają przepływ.
+`CompilationResult` zawiera sukces, niejawny identyfikator artefaktu silnika i
+wewnętrzną diagnostykę. `ExecutionReport` przenosi surowy raport oraz kod wyjścia;
+nie jest odpowiedzią API i nie może być przekazywany uczestnikowi bez oceny.
+`SuiteExecution` wiąże te dane z zestawem i wymaga braku raportu po błędzie budowy.
+Na tym etapie implementacje wszystkich trzech etapów istnieją tylko jako atrapy
+w testach. Parser raportów, wyliczanie werdyktów, sanitizacja diagnostyki,
+telemetria przyczyn zakończenia, egzekwowanie wspólnych budżetów, ponowne użycie
+wspólnych celów i sprzątanie artefaktów pozostają do wdrożenia przy integracji
+silnika. Surowy raport i kod wyjścia nie wystarczają do potwierdzenia przekroczenia
+limitu pamięci lub czasu. Nie ma jeszcze konfiguracji Spring ani prawdziwego
+kompilatora. `StagedSubmissionExecutorTests` sprawdza kolejność, pomijanie
+niezbudowanego celu, kontynuację innych celów oraz zatrzymanie przy awarii.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje

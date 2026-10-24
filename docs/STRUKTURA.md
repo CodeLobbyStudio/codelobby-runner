@@ -50,6 +50,16 @@ samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja prof
 nie oznacza dostępności danego języka w uruchomionym runnerze ani kompletnej
 walidacji rozszerzeń źródeł i istnienia klasy wejściowej w kodzie Javy.
 
+`SubmissionExecutor` w `core/` definiuje granicę wykonania publicznego Run:
+przyjmuje uprzednio zwalidowany `RunRequest` i zwraca `RunResult`. Nie obsługuje
+zadań asynchronicznego Submit. Nie ma jeszcze implementacji wykonującej kod ani
+komponentu Spring podłączającego wykonawcę do aplikacji.
+`StubSubmissionExecutor` znajduje się wyłącznie w `src/test/`: zwraca wynik
+ustalony przez test, bez odczytywania, kompilacji czy uruchamiania źródeł. Nie
+trafia do aplikacyjnego JAR-a i nie potwierdza poprawności rozwiązania.
+`SubmissionExecutorTests` sprawdza kontraktowe scenariusze sukcesu, błędnej
+odpowiedzi i błędu kompilacji.
+
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
 przypadku (w tym `NOT_RUN`, bez `COMPILATION_ERROR`). `TestResult` przechowuje
 wynik przypadku i diagnostykę jako wartości JSON dowolnego typu. Dla `HIDDEN`

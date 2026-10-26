@@ -8,6 +8,7 @@ Kod znajduje się w `src/main/java/pl/codelobby/runner/`:
 - `languages/java/` — pierwszy język w MVP
 - `sandbox/` — izolacja, limity i uruchamianie kodu
 - `model/` — dane wejściowe i wynik wykonania
+- `api/` — kontroler HTTP Run, uwierzytelnienie, ścisły JSON i mapowanie błędów
 
 Pozostałe katalogi projektu:
 
@@ -42,18 +43,19 @@ jest liczony po nadpisaniach, bez podwójnego doliczania oryginału. Oryginały
 i nadpisania muszą osobno spełniać limit pojedynczego pliku.
 `RequestValidationException` zawiera `ValidationErrorCode`: `INVALID_REQUEST`,
 `INVALID_SOURCE_FILES` lub `PAYLOAD_TOO_LARGE`. Komunikaty pozostają ogólne;
-mapowanie kodów na HTTP będzie osobnym etapem.
-Walidator nie jest jeszcze podłączony do HTTP. Limit całego body (2000000 bajtów)
-musi być egzekwowany podczas odczytu przez przyszłą warstwę HTTP, nie przez
-ponowną serializację obiektu. Pozostają też kontrole rzeczywistego systemu plików;
+`RunErrorHandler` mapuje kody na odpowiedzi HTTP.
+Walidator jest podłączony do HTTP przez `RunSubmissionUseCase`. Limit całego body
+(2000000 bajtów) jest egzekwowany podczas odczytu w `RunController`, również bez
+Content-Length, a nie przez ponowną serializację obiektu. Pozostają kontrole
+rzeczywistego systemu plików;
 samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja profilu
 nie oznacza dostępności danego języka w uruchomionym runnerze ani kompletnej
 walidacji rozszerzeń źródeł i istnienia klasy wejściowej w kodzie Javy.
 
 `SubmissionExecutor` w `core/` definiuje granicę wykonania publicznego Run:
 przyjmuje uprzednio zwalidowany `RunRequest` i zwraca `RunResult`. Nie obsługuje
-zadań asynchronicznego Submit. Nie ma jeszcze implementacji wykonującej kod ani
-komponentu Spring podłączającego wykonawcę do aplikacji.
+zadań asynchronicznego Submit. Nie ma jeszcze implementacji wykonującej kod.
+Konfiguracja Spring domyślnie podłącza wykonawcę zgłaszającego brak dostępności.
 `StubSubmissionExecutor` znajduje się wyłącznie w `src/test/`: zwraca wynik
 ustalony przez test, bez odczytywania, kompilacji czy uruchamiania źródeł. Nie
 trafia do aplikacyjnego JAR-a i nie potwierdza poprawności rozwiązania.
@@ -63,9 +65,9 @@ odpowiedzi i błędu kompilacji.
 `RunResponse`: najpierw waliduje żądanie, następnie raz wywołuje wykonawcę,
 a wynik opakowuje w identyfikatory z żądania i wersję kontraktu. Odrzucone
 żądanie nie trafia do wykonawcy. Wyjątki wykonawcy są propagowane bez zamiany
-w sukces; brak wyniku jest błędem stanu. Mapowanie awarii na bezpieczne odpowiedzi
-HTTP będzie osobnym etapem. Klasa otrzymuje zależności przez konstruktor;
-nie ma jeszcze konfiguracji Spring ani endpointu. `RunSubmissionUseCaseTests`
+w sukces; brak wyniku jest błędem stanu. `RunErrorHandler` mapuje awarie na ogólne
+odpowiedzi HTTP. Klasa otrzymuje zależności przez konstruktor, a `RunConfiguration`
+łączy ją z kontrolerem. `RunSubmissionUseCaseTests`
 sprawdza pełny kształt odpowiedzi z przykładami kontraktu, korelację żądania,
 zatrzymanie błędnych żądań przed wykonaniem oraz propagację awarii.
 
@@ -84,8 +86,8 @@ w testach. Parser raportów, wyliczanie werdyktów, sanitizacja diagnostyki,
 telemetria przyczyn zakończenia, egzekwowanie wspólnych budżetów, ponowne użycie
 wspólnych celów i sprzątanie artefaktów pozostają do wdrożenia przy integracji
 silnika. Surowy raport i kod wyjścia nie wystarczają do potwierdzenia przekroczenia
-limitu pamięci lub czasu. Nie ma jeszcze konfiguracji Spring ani prawdziwego
-kompilatora. `StagedSubmissionExecutorTests` sprawdza kolejność, pomijanie
+limitu pamięci lub czasu. Etapy nie są skonfigurowane jako wykonawca Spring
+i nie ma prawdziwego kompilatora. `StagedSubmissionExecutorTests` sprawdza kolejność, pomijanie
 niezbudowanego celu, kontynuację innych celów oraz zatrzymanie przy awarii.
 
 `Verdict` opisuje ogólny werdykt rozwiązania, a `TestVerdict` status pojedynczego
@@ -106,8 +108,25 @@ opisy publiczne łączone z wynikami przez `testId`. Modele nie wymagają dodatk
 pól. Ochrona diagnostyki przed ujawnieniem kodu testów będzie częścią wykonania;
 samo ukrycie plików w przeglądarce nie zapewnia tajności we wspólnym sandboxie.
 
-Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Run/Submit,
-integracji Judge0, bazy danych ani kolejki. Instrukcje budowania, testowania
-i uruchomienia znajdują się w głównym README.
+`RunController` obsługuje `POST /internal/v1/runs`. Odczytuje ograniczone body
+i ścisły JSON UTF-8; odrzuca nieznane/powtórzone pola, brakujące wymagane wartości,
+konwersje typów oraz dodatkowy JSON po żądaniu. `InternalApiFilter` chroni ścieżki
+`/internal/` kluczem z `CODELOBBY_INTERNAL_KEY`; porównuje stałej długości skróty
+SHA-256 przez `MessageDigest.isEqual`. Brak konfiguracji odrzuca wszystkie
+wewnętrzne żądania, a zbyt krótki skonfigurowany klucz blokuje start aplikacji.
+Health pozostaje publiczny. Odpowiedzi wewnętrzne mają `Cache-Control: no-store`.
+`RunErrorHandler` nie zwraca treści wyjątków ani kodu źródłowego. Błąd parsowania
+samego żądania jest zamieniany na 400 w kontrolerze; błąd parsera wykonawcy
+pozostaje błędem serwera 500, zamiast obciążać poprawne żądanie klienta. Błędy mają
+dokładnie pola `code`, `message`, `retryable`. Domyślny `SubmissionExecutor`
+zgłasza `ExecutionUnavailableException`, mapowany na 503 z `Retry-After: 1`.
+Atrapa wykonawcy jest podłączana jedynie przez konfigurację testową, bez
+przełącznika uruchamiającego pozorne ocenianie w aplikacji.
+`RunEndpointTests` testuje prawdziwe HTTP, kontroler i przypadek użycia z atrapą;
+`RunEndpointUnavailableTests` potwierdza brak pozornego sukcesu zwykłej aplikacji.
+
+Na tym etapie nie ma kompilacji ani wykonywania kodu uczestników, API Submit,
+odpytywania zadań, endpointu capabilities, integracji Judge0, bazy danych ani
+kolejki. Instrukcje budowania, testowania i uruchomienia są w głównym README.
 
 Najpierw robimy cały flow dla Javy. C++ i Python dołożymy dopiero jak Java będzie działała od początku do końca.

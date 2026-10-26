@@ -2,6 +2,8 @@
 
 Revision: **1.0.0-draft.2**, 2026-10-20. Proposal for runner Issue #5; not implemented or approved as a deployed API.
 
+Implementation status: the HTTP Run transport, authentication, request validation and error mapping are available locally; execution remains unavailable by default (503). Successful Run responses are exercised with test-only executors. Submit, polling, capabilities and real sandbox execution are not implemented. See README.md for current startup and transport behavior; the complete contract below remains the target specification.
+
 Participant-visibility clarification, 2026-10-23: public test descriptions and results are visible; public test source is not. Wire fields, enum values and the draft version remain unchanged. Backend and runner owners must agree on this revised behavior before integration.
 
 This revision replaces the unpublished single-file draft with the requested planned CodeLobby model. `CONTRACT.md` and `openapi.yaml` jointly define the contract: OpenAPI defines shapes; this document adds cross-field validation, byte limits, execution and security semantics. Examples are not actual runtime responses. Both drafts use `/internal/v1` because neither is released; an incompatible change to a released v1 would require v2.

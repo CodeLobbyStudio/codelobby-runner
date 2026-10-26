@@ -44,7 +44,7 @@ class RunRequestValidatorTests {
             "../Solution.java", "src/./Solution.java", "src/../Solution.java", "src//Solution.java",
             "src/", "src/a b.java", "src/a\tb.java", "src/a\nb.java", "src/a\u0000b.java",
             "src/ż.java", "src/name.", "CON", "src/con.java", "src/LPT9.txt", "src/COM1",
-            ".codelobby/report", "src/.CODELOBBY/report"})
+            ".codelobby/report", "src/.CODELOBBY/report", "src/.hidden/Test.java", ".Test.java"})
     void rejectsUnsafePathsInBothManifests(String path) {
         assertInvalid(request(List.of(editable(path)), List.of()));
         assertInvalid(request(List.of(editable("src/Solution.java")), List.of(new SubmissionFile(path, ""))));

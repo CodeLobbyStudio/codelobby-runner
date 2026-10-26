@@ -48,9 +48,12 @@ Walidator jest podłączony do HTTP przez `RunSubmissionUseCase`. Limit całego 
 (2000000 bajtów) jest egzekwowany podczas odczytu w `RunController`, również bez
 Content-Length, a nie przez ponowną serializację obiektu. Pozostają kontrole
 rzeczywistego systemu plików;
-samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Walidacja profilu
-nie oznacza dostępności danego języka w uruchomionym runnerze ani kompletnej
-walidacji rozszerzeń źródeł i istnienia klasy wejściowej w kodzie Javy.
+samo sprawdzenie tekstu ścieżki nie chroni przed dowiązaniami. Rozszerzenia źródeł
+muszą pasować do języka: `.java`, `.cpp`/`.h`/`.hpp` lub `.py`. Sprawdzane jest
+poprawne kodowanie Unicode przed liczeniem bajtów UTF-8, bez zastępowania błędnych
+znaków. Segmenty ścieżek są zgodne ze wzorcem OpenAPI, również co do pierwszego
+znaku. Walidacja profilu nie oznacza dostępności języka w uruchomionym runnerze
+ani potwierdzenia istnienia klasy wejściowej w kodzie Javy.
 
 `SubmissionExecutor` w `core/` definiuje granicę wykonania publicznego Run:
 przyjmuje uprzednio zwalidowany `RunRequest` i zwraca `RunResult`. Nie obsługuje
@@ -63,7 +66,9 @@ trafia do aplikacyjnego JAR-a i nie potwierdza poprawności rozwiązania.
 odpowiedzi i błędu kompilacji.
 `RunSubmissionUseCase` łączy walidację z `SubmissionExecutor` i przygotowaniem
 `RunResponse`: najpierw waliduje żądanie, następnie raz wywołuje wykonawcę,
-a wynik opakowuje w identyfikatory z żądania i wersję kontraktu. Odrzucone
+a wynik opakowuje w identyfikatory z żądania i wersję kontraktu. Przed zwrotem
+sprawdza zgodność identyfikatorów zestawów i przypadków oraz kolejności i liczby
+wyników z żądaniem. Wynik dotyczący innego przypadku nie trafia do odpowiedzi. Odrzucone
 żądanie nie trafia do wykonawcy. Wyjątki wykonawcy są propagowane bez zamiany
 w sukces; brak wyniku jest błędem stanu. `RunErrorHandler` mapuje awarie na ogólne
 odpowiedzi HTTP. Klasa otrzymuje zależności przez konstruktor, a `RunConfiguration`

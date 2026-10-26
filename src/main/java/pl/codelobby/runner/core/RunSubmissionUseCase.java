@@ -24,6 +24,25 @@ public final class RunSubmissionUseCase {
         if (result == null) {
             throw new IllegalStateException("Executor did not return a result");
         }
+        int index = 0;
+        for (var suite : request.testSuites()) {
+            for (var testCase : suite.cases()) {
+                if (index >= result.testResults().size()) {
+                    throw invalidResult();
+                }
+                var actual = result.testResults().get(index++);
+                if (!suite.suiteId().equals(actual.suiteId()) || !testCase.testId().equals(actual.testId())) {
+                    throw invalidResult();
+                }
+            }
+        }
+        if (index != result.testResults().size()) {
+            throw invalidResult();
+        }
         return new RunResponse(request.requestId(), request.taskVersionId(), CONTRACT_VERSION, result);
+    }
+
+    private IllegalStateException invalidResult() {
+        return new IllegalStateException("Executor result does not match the declared tests");
     }
 }

@@ -9,9 +9,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import pl.codelobby.runner.model.RunRequest;
 import pl.codelobby.runner.model.RunResponse;
+import pl.codelobby.runner.model.RunResult;
 import pl.codelobby.runner.model.SubmissionFile;
+import pl.codelobby.runner.model.TestCaseDefinition;
+import pl.codelobby.runner.model.TestResult;
+import pl.codelobby.runner.model.TestSuite;
+import pl.codelobby.runner.model.TestVerdict;
+import pl.codelobby.runner.model.TestVisibility;
 import pl.codelobby.runner.model.Verdict;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -109,5 +116,38 @@ class RunSubmissionUseCaseTests {
 
         assertThatThrownBy(() -> useCase.execute(request)).isInstanceOf(IllegalStateException.class)
                 .hasMessage("Executor did not return a result");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"wrong-id", "wrong-suite", "missing", "extra", "reordered", "duplicate"})
+    void rejectsResultsNotMatchingDeclaredCases(String defect) throws Exception {
+        var suite = request.testSuites().getFirst();
+        var multiple = new TestSuite(suite.suiteId(), suite.visibility(), suite.testFilePaths(), suite.execution(),
+                List.of(new TestCaseDefinition("first"), new TestCaseDefinition("second")));
+        var input = new RunRequest(request.requestId(), request.taskVersionId(), request.language(), request.taskFiles(),
+                request.submissionFiles(), List.of(multiple), request.limits());
+        var first = acceptedCase("first", suite.suiteId());
+        var second = acceptedCase("second", suite.suiteId());
+        var cases = switch (defect) {
+            case "wrong-id" -> List.of(first, acceptedCase("unexpected", suite.suiteId()));
+            case "wrong-suite" -> List.of(first, acceptedCase("second", "other-suite"));
+            case "missing" -> List.of(first);
+            case "extra" -> List.of(first, second, acceptedCase("extra", suite.suiteId()));
+            case "reordered" -> List.of(second, first);
+            case "duplicate" -> List.of(first, first);
+            default -> throw new AssertionError("Unknown test defect");
+        };
+        var template = mapper.readValue(Path.of("docs/api/examples/run-accepted.json").toFile(), RunResponse.class).result();
+        var result = new RunResult(Verdict.ACCEPTED, cases.size(), cases.size(), cases, "", null, null, null,
+                template.benchmark(), template.gradingIntegrity());
+        var useCase = new RunSubmissionUseCase(new RunRequestValidator(), new StubSubmissionExecutor(result));
+
+        assertThatThrownBy(() -> useCase.execute(input)).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Executor result does not match the declared tests");
+    }
+
+    private TestResult acceptedCase(String id, String suiteId) {
+        return new TestResult(id, suiteId, TestVisibility.PUBLIC, TestVerdict.ACCEPTED,
+                null, null, null, null, null);
     }
 }

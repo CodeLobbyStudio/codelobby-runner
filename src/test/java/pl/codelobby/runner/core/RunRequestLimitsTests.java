@@ -172,6 +172,24 @@ class RunRequestLimitsTests {
                 ValidationErrorCode.INVALID_SOURCE_FILES);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"solution.py", "Solution.txt", "Solution.JAVA", "source.bin"})
+    void rejectsSourceExtensionsNotSupportedByTheSelectedLanguage(String path) {
+        var files = new ArrayList<>(base.taskFiles());
+        files.add(new TaskFile(path, FileType.READ_ONLY, ""));
+        failure(request(files, List.of(), base.testSuites()), ValidationErrorCode.INVALID_SOURCE_FILES);
+    }
+
+    @Test
+    void rejectsInvalidUnicodeInsteadOfReplacingSourceCharacters() {
+        String invalidUnicode = String.valueOf((char) 0xD800);
+        var files = new ArrayList<>(base.taskFiles());
+        files.set(0, new TaskFile(files.getFirst().path(), FileType.EDITABLE, invalidUnicode));
+        failure(request(files, List.of(), base.testSuites()), ValidationErrorCode.INVALID_SOURCE_FILES);
+        failure(request(base.taskFiles(), List.of(new SubmissionFile("src/Solution.java", invalidUnicode)),
+                base.testSuites()), ValidationErrorCode.INVALID_SOURCE_FILES);
+    }
+
     private List<TaskFile> projectFiles(int count) {
         var files = new ArrayList<TaskFile>();
         for (int i = 0; i < count; i++) {

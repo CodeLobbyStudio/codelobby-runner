@@ -26,7 +26,7 @@ public final class RunRequestValidator {
     private static final int MAX_CASES = 50;
     private static final int MAX_FILE_BYTES = 131072;
     private static final int MAX_PROJECT_BYTES = 1048576;
-    private static final Pattern SEGMENT = Pattern.compile("[A-Za-z0-9_.-]+");
+    private static final Pattern SEGMENT = Pattern.compile("[A-Za-z0-9_-][A-Za-z0-9_.-]*");
     private static final Pattern DEVICE_NAME = Pattern.compile("CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]");
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private static final Pattern JAVA_CLASS = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
@@ -45,6 +45,16 @@ public final class RunRequestValidator {
             throw invalidRequest();
         }
         validateTestSuites(request);
+        for (var file : request.taskFiles()) {
+            boolean supported = switch (request.language()) {
+                case JAVA -> file.path().endsWith(".java");
+                case CPP -> file.path().endsWith(".cpp") || file.path().endsWith(".h") || file.path().endsWith(".hpp");
+                case PYTHON -> file.path().endsWith(".py");
+            };
+            if (!supported) {
+                throw invalidFiles();
+            }
+        }
     }
 
     /** Includes file checks so suite references are never checked against an invalid manifest. */
@@ -172,6 +182,9 @@ public final class RunRequestValidator {
     }
 
     private int fileBytes(String content) {
+        if (!StandardCharsets.UTF_8.newEncoder().canEncode(content)) {
+            throw invalidFiles();
+        }
         int bytes = content.getBytes(StandardCharsets.UTF_8).length;
         checkCount(bytes, MAX_FILE_BYTES);
         return bytes;

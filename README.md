@@ -18,6 +18,37 @@ Submitted source code is **untrusted**. The runner must isolate execution and en
 
 Track tasks using the **CodeLobby Development** project. Use small Issues and reviewed Pull Requests.
 
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds and tests pull
+requests targeting `main`, including new commits pushed to an open PR. It also
+runs after pushes to `main`. Once the workflow is on the default branch, it can
+be started manually from GitHub Actions.
+
+The `CI` workflow runs `Build and test (Java 21)` on Ubuntu 24.04 with Temurin
+JDK 21. It uses the Maven Wrapper and caches downloaded Maven dependencies.
+The matching local command, with JDK 21 selected, is:
+
+```sh
+./mvnw -B -ntp clean verify
+```
+
+In PowerShell, use `.\mvnw.cmd -B -ntp clean verify`.
+
+A compilation or test failure fails the PR check. See the build step log for
+details. Surefire XML and text reports are uploaded as a `test-reports-...`
+artifact on the Actions run page, including after a failed test run, and retained
+for seven days. Compilation or setup failures can occur before reports exist,
+in which case the upload step warns and the original failure remains visible.
+Superseded runs for the same PR/ref are cancelled and each job has a 15-minute
+timeout. An artifact upload failure also leaves the check failed.
+
+CI requires no Judge0, Docker services, database, backend or configured repository
+secrets. Executor doubles remain test-only. Official actions are pinned to commit
+SHAs and the workflow token has read-only repository contents access. It does
+not commit, deploy, merge or change branch protection. Making the check required
+for merge is a separate repository setting.
+
 ## Current scope
 
 The service provides HTTP health and `POST /internal/v1/runs`, strict request

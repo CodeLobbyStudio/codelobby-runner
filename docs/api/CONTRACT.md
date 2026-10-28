@@ -2,6 +2,10 @@
 
 Revision: **1.0.0-draft.2**, 2026-10-20. Proposal for runner Issue #5; not implemented or approved as a deployed API.
 
+Implementation status: the HTTP Run transport, authentication, request validation and error mapping are available locally; execution remains unavailable by default (503). Successful Run responses are exercised with test-only executors. Submit, polling, capabilities and real sandbox execution are not implemented. See README.md for current startup and transport behavior; the complete contract below remains the target specification.
+
+Participant-visibility clarification, 2026-10-23: public test descriptions and results are visible; public test source is not. Wire fields, enum values and the draft version remain unchanged. Backend and runner owners must agree on this revised behavior before integration.
+
 This revision replaces the unpublished single-file draft with the requested planned CodeLobby model. `CONTRACT.md` and `openapi.yaml` jointly define the contract: OpenAPI defines shapes; this document adds cross-field validation, byte limits, execution and security semantics. Examples are not actual runtime responses. Both drafts use `/internal/v1` because neither is released; an incompatible change to a released v1 would require v2.
 
 ## 1. Scope and decisions
@@ -23,6 +27,8 @@ The API is not FUNCTION-only and requires neither Solution.java nor a fixed meth
 ## 2. Responsibilities
 
 Backend owns users, lobby permissions, immutable task versions, allowed languages, authoritative files/tests, participant drafts, submissions, result persistence and rankings. It supplies every public test for Run and the complete selected public/hidden set for Submit. Runner can validate references and counts but cannot prove completeness without the task database.
+
+Backend also owns participant-facing public test names and simplified descriptions, linked to result records by testId within the immutable task version. They are not fields of the runner request or response. Backend must exclude both VISIBLE_TEST and HIDDEN_TEST source files from participant APIs, downloads and browser payloads; hiding an editor tab is insufficient. Only EDITABLE and READ_ONLY file contents are participant-visible. Host-authoring access is separate from participant access.
 
 Runner validates, overlays permitted edits, builds and executes suites in Judge0, validates reports, controls resources/jobs and returns results. It does not query backend storage or authorize participants. Browser calls backend only. Backend must reconstruct roles, suites, entry points and limits from the saved task version instead of trusting participant input. Both host and participant source are untrusted for infrastructure access.
 
@@ -59,8 +65,10 @@ All request fields are required and non-null. Empty submissionFiles means evalua
 | --- | --- | --- |
 | EDITABLE | read/write through backend | Host starter overridden only at matching participant paths |
 | READ_ONLY | read only | Original authoritative helper code |
-| VISIBLE_TEST | read only | Original public test source |
+| VISIBLE_TEST | public description and result only; no source file | Original public test source, backend-to-runner only |
 | HIDDEN_TEST | never in participant views | Original hidden test source, Submit only |
+
+VISIBLE_TEST is retained as the existing wire name: "visible" refers to public feedback, not source visibility. PUBLIC/HIDDEN suite visibility governs feedback and Run/Submit selection. Neither test role grants participant access to test source. Public input, expectedOutput and actualOutput may be displayed when safely available; source code, assertions and harness implementation are not public feedback. READ_ONLY must not be used to distribute test implementation intended to remain undisclosed.
 
 Runner rejects overrides that add a path or target READ_ONLY/VISIBLE_TEST/HIDDEN_TEST. submissionFiles cannot contain roles. Omitted editable overrides preserve starters; deleting a task file needs a host task version. Empty editable contents are allowed and may fail compilation. Multiple editable files are supported.
 
@@ -70,7 +78,7 @@ Validate before starting a compiler, then copy taskFiles into a fresh workspace 
 
 Build once **per distinct target per request**, not per test case. C++ suites with separate main files require separate targets. Reuse artifacts only inside the same request for benchmark rounds. Each suite executes in a fresh sandbox process/workspace; different suites share no writable runtime state. Cases within one suite may share static/process state, so host tests must account for their order. Clean up all processes/artifacts after the operation.
 
-Paths are canonical POSIX relative paths, e.g. src/Solution.java or tests/public_tests.py. Allow nested ASCII letter/digit/underscore/hyphen/dot segments. Reject absolute paths, drive prefixes, backslashes, dot/dot-dot segments, NUL/control/whitespace, empty segments, trailing dots, reserved Windows device basenames, runner-reserved .codelobby paths, case-insensitive collisions, duplicate paths and file/directory prefix collisions. Maximum length is 240 characters. Validate containment during materialization; reject symlinks and prevent runtime-created links from escaping workspace roots. Request paths never denote host files.
+Paths are canonical POSIX relative paths, e.g. src/Solution.java or tests/public_tests.py. Allow nested ASCII letter/digit/underscore/hyphen/dot segments. As specified by RelativePath in OpenAPI, each segment starts with a letter, digit, underscore or hyphen; dots are allowed only in later positions. Reject absolute paths, drive prefixes, backslashes, dot/dot-dot segments, NUL/control/whitespace, empty segments, trailing dots, reserved Windows device basenames, runner-reserved .codelobby paths, case-insensitive collisions, duplicate paths and file/directory prefix collisions. Maximum length is 240 characters. Validate containment during materialization; reject symlinks and prevent runtime-created links from escaping workspace roots. Request paths never denote host files.
 
 ## 6. Host suites and language profiles
 
@@ -102,7 +110,7 @@ A report saying ACCEPTED cannot override a later timeout, memory/output breach o
 
 **Grading limitation:** host tests and participant code share a sandbox and may share process/filesystem access. A malicious solution may inspect test source/assertions or forge the report. Report validation is not cryptographic proof of correct execution. Sandbox isolation protects infrastructure; API redaction protects participant-facing responses. Neither alone guarantees test secrecy inside the participant runtime or tamper-proof grading.
 
-Results explicitly report gradingIntegrity = HOST_TESTS_IN_PARTICIPANT_SANDBOX. Do not claim TRUSTED_EXTERNAL_GRADING. Strict adversarial grading/test secrecy requires a stronger external evaluator or additional isolation boundary, agreed separately. HIDDEN_TEST files remain absent from browser responses even though runtime secrecy is limited.
+Results explicitly report gradingIntegrity = HOST_TESTS_IN_PARTICIPANT_SANDBOX. Do not claim TRUSTED_EXTERNAL_GRADING. Strict adversarial grading/test secrecy requires a stronger external evaluator or additional isolation boundary, agreed separately. Both VISIBLE_TEST and HIDDEN_TEST files remain absent from browser responses even though runtime secrecy is limited. A malicious participant program may read test source and encode it in arbitrary output; API source filtering and ordinary diagnostic sanitization do not guarantee runtime confidentiality.
 
 ## 8. Result fields and verdicts
 
@@ -112,7 +120,7 @@ Per-case result: testId, suiteId, visibility, status, input, expectedOutput, act
 
 Overall verdicts: ACCEPTED, WRONG_ANSWER, COMPILATION_ERROR, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, OUTPUT_LIMIT_EXCEEDED, EXECUTION_ERROR. Cases additionally allow NOT_RUN, without per-case COMPILATION_ERROR. ACCEPTED requires every case accepted and every suite successfully completed. Overall priority when multiple failures occur: COMPILATION_ERROR, EXECUTION_ERROR, OUTPUT_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, RUNTIME_ERROR, WRONG_ANSWER, ACCEPTED. Use verified engine evidence; OutOfMemoryError text alone does not prove MLE.
 
-Only bounded, sanitized **public-suite** compiler diagnostics may be returned. For an evaluation involving hidden builds, top-level compileOutput is null. Hidden source paths/assertions/exceptions/reports/streams never enter message, logs or public diagnostics. Shared multi-case streams are null unless per-case attribution is reliable. Backend exposes aggregate hidden counts rather than individual hidden records/IDs.
+Only bounded, sanitized **public-suite** compiler diagnostics concerning participant-visible EDITABLE/READ_ONLY sources may be returned. Remove test-source excerpts, assertion implementations, test-source paths, harness stack frames and raw report data from compiler/runtime diagnostics, message, stdout/stderr and logs, including for public suites. For a public test build/configuration failure, return a generic processing/configuration error rather than exposing the test implementation. If safe separation is not reliable, return null for optional diagnostics or a generic message; do not forward raw compiler output or traces. For an evaluation involving hidden builds, top-level compileOutput remains null. Hidden inputs/expected/actual values and other hidden diagnostics remain redacted. Shared multi-case streams are null unless per-case attribution is reliable and disclosure-safe. Public input/expectedOutput/actualOutput are allowed only as public case data, not a channel for test-source excerpts. Backend exposes aggregate hidden counts rather than individual hidden records/IDs. These are API disclosure rules, subject to the shared-sandbox confidentiality limitation in section 7; no substring filter is claimed to stop adversarial source exfiltration.
 
 sandboxCpuTimeMs sums external suite CPU; sandboxPeakMemoryBytes is the maximum process peak across evaluation suites. Both exclude compilation/queueing but include startup/test-framework overhead; unavailable measurements are null. They do not measure isolated method complexity.
 
@@ -227,14 +235,16 @@ Publish actual languages/versions, executionProfiles, pinned builtinLibraries, f
 ## 15. Integration and examples
 
 1. Host creates independent language file sets and suite metadata; backend saves an immutable task version.
-2. Participant gets EDITABLE/READ_ONLY/VISIBLE_TEST, edits allowed files only.
+2. Participant gets EDITABLE/READ_ONLY source files and backend-owned public test descriptions; no VISIBLE_TEST/HIDDEN_TEST source is sent to the browser. Only EDITABLE files can be changed.
 3. Backend authorizes Run and sends authoritative public files/suites plus participant overrides.
 4. Runner assembles isolated suite targets and returns public feedback.
 5. Submit includes full authoritative selected public/hidden manifest and a saved submissionId/payload.
-6. Backend polls Location, persists terminal results, redacts hidden details and applies ranking policy.
+6. Backend polls Location, persists terminal results, joins public descriptions by testId, redacts hidden details and applies ranking policy.
 7. Retry/idempotency handling never blocks unrelated backend operations.
 
 Examples demonstrate Java multiple files plus Run/Submit, C++ headers/sources, Python modules, host reports, all job states, compile/wrong-answer results, capabilities and errors. countVowels/twice/square are **examples**, not an allowlist of task signatures.
+
+Request examples contain test source because they represent authenticated backend-to-runner messages, not participant-facing payloads. Public descriptions remain in backend storage; see examples/README.md for the presentation boundary. JSON shapes do not change with this clarification.
 
 ```sh
 curl --request POST 'http://127.0.0.1:8081/internal/v1/runs' \
@@ -250,6 +260,8 @@ These endpoints are not implemented in bootstrap #3.
 - [ ] Backend/runner review authoritative overlays, test profiles and reporting together.
 - [ ] Each language has independent multi-file fixtures; no automatic translation.
 - [ ] Participants cannot alter protected files, roles, test selection or entry points.
+- [ ] Participant APIs/downloads omit both test-source roles; public names/descriptions are joined by testId without adding runner fields.
+- [ ] Public test compilation errors, traces and streams do not expose test implementation; unsafe optional diagnostics are null.
 - [ ] Nested paths, traversal, duplicates, case collisions and runtime links are checked.
 - [ ] Run includes all public cases/no hidden files; Submit includes the complete set.
 - [ ] Java packages, C++ headers and Python modules work through verified profiles.

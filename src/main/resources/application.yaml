@@ -2,6 +2,9 @@ spring:
   application:
     name: codelobby-runner
 
+runner:
+  internal-key: ${CODELOBBY_INTERNAL_KEY:}
+
 server:
   address: ${RUNNER_BIND_ADDRESS:127.0.0.1}
   port: ${RUNNER_PORT:8081}

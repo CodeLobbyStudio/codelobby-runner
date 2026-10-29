@@ -14,4 +14,5 @@ services:
     command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "workers"]
     volumes:
       - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
+      - ./report-confirmed-oom.rb:/api/config/initializers/codelobby_confirmed_oom.rb:ro
     cgroup: host

@@ -8,6 +8,8 @@ Owned by codelobby-runner. This is an experimental local environment, not a prod
 - `compose.mac.yaml`: experimental Apple Silicon override using the pinned AMD64 image.
 - `judge0.conf.example`: configuration template without secrets.
 - `start-without-env-log.sh`: checksum-guarded startup adapter suppressing the exported-environment dump.
+- `report-confirmed-oom.rb`: reports confirmed runtime OOM without inferring it from exit 137.
+- `tests/confirmed_oom_test.rb`: focused OOM regression cases.
 
 ## Requirements and limitations
 
@@ -49,14 +51,15 @@ docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml
 
 Do not use `down -v` when preserving database data. The separate older `codelobby-judge0` project is not managed by these commands. Both projects cannot publish localhost port 2358 simultaneously.
 
-## Startup logging
+## OOM and startup logging adapters
 
-The pinned unofficial image prints exported variables through `tee` in both startup scripts. The startup adapter checks the original script checksum and suppresses that output while preserving the environment file used by Judge0. Normal service logs remain enabled. This is not a complete image audit.
+The Mac startup adapter checks original startup-script hashes and suppresses only the `tee` environment dump. Normal service logs remain enabled. The OOM adapter checks the original job source hash, requires `cg-oom-killed:1` and an increase of the runtime sandbox's OOM-kill counter, and returns Judge0 status 12 with `Memory limit exceeded`. Exit 137, stderr text and peak-memory values alone are not proof. Timeout/internal failure classification is preserved. These adapters do not prove complete image confidentiality or cover all compilation OOM cases.
 
 ## Local verification
 
-API startup, authenticated PostgreSQL/Redis access and simple Python, C++ and Java executions have been checked locally. Language-version and deployment limitations above remain unresolved.
+Seven focused OOM tests pass. Live local checks distinguish a confirmed OOM from explicit exit 137, self-SIGKILL and participant output. A later valid program succeeds. The image still has no aggregate writable-storage limit in this stage.
 
 ```sh
+ruby tests/confirmed_oom_test.rb "$PWD/report-confirmed-oom.rb"
 bash -n start-without-env-log.sh
 ```

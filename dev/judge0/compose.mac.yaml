@@ -15,4 +15,7 @@ services:
     volumes:
       - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
       - ./report-confirmed-oom.rb:/api/config/initializers/codelobby_confirmed_oom.rb:ro
+      - ./bounded-workspace.rb:/api/config/initializers/codelobby_bounded_workspace.rb:ro
+      - ./workspace-helper.sh:/usr/local/bin/workspace-helper.sh:ro
+      - ./isolate-with-workspace.sh:/opt/codelobby-bin/isolate:ro
     cgroup: host

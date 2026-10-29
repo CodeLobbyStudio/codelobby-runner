@@ -39,3 +39,7 @@ ENABLE_NETWORK=false
 ALLOW_ENABLE_NETWORK=false
 # Generate an independent session secret locally before startup.
 SECRET_KEY_BASE=
+
+# Shared capacity for each submission workspace, including /box, /tmp and /dev/shm.
+WORKSPACE_SIZE_MIB=64
+WORKSPACE_INODES=4096

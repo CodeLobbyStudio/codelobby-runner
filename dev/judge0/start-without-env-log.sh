@@ -19,6 +19,12 @@ esac
 
 # Fail closed if the original script changes. No secrets are read by this wrapper.
 printf '%s  %s\n' "$expected" "$original" | sha256sum -c - >/dev/null
+if [[ "$1" == workers ]]; then
+  # The pinned image has a group-writable /var/local ancestor.
+  # Isolate/workspace paths must not have writable ancestors.
+  sudo chmod go-w /var/local /var/local/lib
+  export PATH="/opt/codelobby-bin:$PATH"
+fi
 patched=$(mktemp /tmp/judge0-start.XXXXXX)
 sed 's@^export | sudo tee /api/environment$@export | sudo tee /api/environment > /dev/null@' "$original" > "$patched"
 # Keep the upstream startup and signal handling in the foreground process.

@@ -108,3 +108,13 @@ class BoundedWorkspaceTest < Minitest::Test
   end
 
 end
+
+class ReusableBoxIdTest < Minitest::Test
+  def test_box_ids_wrap_for_the_single_worker_package
+    base = Class.new do
+      def box_id; 1007; end
+    end
+    adapted = Class.new(base) { prepend CodeLobbyBoundedWorkspace }
+    assert_equal 7, adapted.new.send(:box_id)
+  end
+end

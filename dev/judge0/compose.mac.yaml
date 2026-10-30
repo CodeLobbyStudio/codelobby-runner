@@ -1,21 +1,7 @@
-# Experimental local Apple Silicon override.
-# Unofficial image with cgroups changes. Keep the API bound to localhost.
+# Optional compatibility override. The default configuration already supports Apple Silicon.
 services:
   server:
-    image: mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2
     platform: linux/amd64
-    command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]
-    volumes:
-      - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
-
   workers:
-    image: mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2
     platform: linux/amd64
-    command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "workers"]
-    volumes:
-      - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
-      - ./report-confirmed-oom.rb:/api/config/initializers/codelobby_confirmed_oom.rb:ro
-      - ./bounded-workspace.rb:/api/config/initializers/codelobby_bounded_workspace.rb:ro
-      - ./workspace-helper.sh:/usr/local/bin/workspace-helper.sh:ro
-      - ./isolate-with-workspace.sh:/opt/codelobby-bin/isolate:ro
     cgroup: host

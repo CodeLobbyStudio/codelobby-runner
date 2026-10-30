@@ -1,101 +1,123 @@
 # Local Judge0 development environment
 
-Owned by codelobby-runner. This is an experimental local environment, not a production-approved deployment. The Mac configuration uses an unofficial image pinned by digest. Its complete provenance and security have not been audited.
+Owned by codelobby-runner. The default Compose configuration uses the prebuilt image `ghcr.io/ptrthdr/codelobby-judge0:1.0.0` on the maintainer's personal GitHub Container Registry account. The image is independent of the organization repository. Its immutable manifest digest is pinned in `compose.yaml` and `start.sh`.
 
-## Files
+The image provides Java 21, Python 3.12 and C++17, including the local workspace, OOM and compilation-budget adapters. Normal startup downloads it automatically. No image archive or local image build is required.
 
-- `compose.yaml`: Judge0 API, worker, PostgreSQL and Redis.
-- `compose.mac.yaml`: Apple Silicon override using AMD64 emulation and the worker host cgroup namespace.
-- `judge0.conf.example`: local configuration template without secrets.
-- `start-without-env-log.sh`: checksum-guarded startup adapter suppressing the image's exported-environment dump. Also removes group/other write access from the worker's `/var/local` ancestors.
-- `report-confirmed-oom.rb`: recognizes confirmed runtime OOM from Isolate metadata and a new sandbox-specific OOM-kill event.
-- `bounded-workspace.rb`: prepares the limited workspace before source/extracted files are written and releases it before Isolate cleanup.
-- `workspace-helper.sh`: root-only, fixed-path tmpfs mounting/unmounting with strict numeric argument checks.
-- `isolate-with-workspace.sh`: preserves Isolate options and maps `/dev/shm` into the same bounded filesystem for every `--run`, including compilation and extraction.
-- `tests/`: focused adapter regression tests.
+This is a local development and MVP demonstration environment. The runner's Judge0 client and complete execution flow are separate implementation work. Starting these services does not make the current runner HTTP endpoint execute submissions.
 
-## Requirements and limitations
+## Start
 
-Upstream Judge0 CE 1.13.1 documents Linux, Docker, Compose and cgroups v1, recommending Ubuntu 22.04: https://github.com/judge0/judge0/releases/tag/v1.13.1.
+Install and start Docker Desktop on macOS. The image is amd64 and Apple Silicon uses emulation. Docker needs sufficient storage and memory. The tested Docker VM had approximately 8 GiB RAM. Allow at least 20 GB free Docker storage for image layers and the backing services. The first start requires internet access to download the public images.
 
-The experimental Mac override runs Isolate 2.2.1 with cgroups v2 on Docker Desktop. Both Judge0 containers are privileged and the worker uses the Docker VM's host cgroup namespace. Use a dedicated local environment and keep the API bound to localhost. These broad privileges must be reviewed separately before any shared deployment.
+From the repository root:
 
-The retained PostgreSQL/Redis versions reproduce the existing prototype, not a claim that they are current. The image provides Python 3.8.1, GCC 9.2.0 and OpenJDK 13.0.1. This does not meet the runner contract's Java 21/Python 3.12 target. Java compilation still emits thread warnings. API startup can warn about cgroup controller delegation even when the checked executions succeed. No production readiness is claimed.
+```sh
+cd dev/judge0
+./start.sh
+```
+
+The script downloads the pinned image if missing, verifies its registry manifest digest through Docker, and creates private `judge0.conf` with three independent random secrets if the file is absent. Existing configuration is preserved. PostgreSQL and Redis are pinned by digest. Readiness checks wait for the database, Redis and HTTP API.
+
+Open `http://127.0.0.1:2359/about` and `/languages`. HTTP availability alone does not verify sandbox execution. If Python 3 is installed on the host, run:
+
+```sh
+python3 smoke-test.py
+```
+
+This executes Java 21 with a 40 MiB allocation, a Python 3.12 feature, and a C++17 feature without caller compiler options. It writes ignored `smoke-results.json`. Host Python is only required for this optional verification.
+
+Stop and start again:
+
+```sh
+./stop.sh
+./start.sh
+```
+
+The Compose project is `codelobby-runner-modern`. Stopping preserves database data. Do not use `down --volumes` for an environment whose submissions must be retained. API access is bound to localhost.
+
+Optional overrides:
+
+```sh
+JUDGE0_PORT=2360 ./start.sh
+```
+
+`JUDGE0_CONFIG_FILE` selects a different private configuration file, using the same value for start and stop. `COMPOSE_PROJECT_NAME` selects a different project. Run only one modern worker deployment per Docker host because the image uses a dedicated fixed cgroup subtree.
 
 ## Private configuration
 
-Run from this directory. Copy `judge0.conf.example` to `judge0.conf` only for a new environment. Set three independently generated secrets: `POSTGRES_PASSWORD`, `REDIS_PASSWORD` and `SECRET_KEY_BASE`. Generate them locally, use hexadecimal values and restrict the file to owner read/write. `judge0.conf` is ignored by Git. Never overwrite an existing private configuration or print resolved Compose output.
+`judge0.conf` and temporary variants are ignored by Git. The file is mounted read-only into Judge0. Compose reads it through `--env-file` for PostgreSQL and Redis credentials. Never print resolved Compose configuration, commit secrets, or put the runner's internal key in this file.
 
-Judge0 loads the file through a read-only mount. Compose also needs `--env-file` to supply the backing services with their individual passwords. An existing PostgreSQL role password must be changed in the database itself when rotating it. No runner internal key or other application secret belongs here.
+Do not replace an existing database password independently of its PostgreSQL volume. Password rotation requires updating the database role and configuration consistently.
 
-## Start and stop the Mac environment
+## Execution profiles and budgets
 
-```sh
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml config --quiet
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml up -d db redis
-```
+| Language | Judge0 ID | Toolchain |
+| --- | --- | --- |
+| Java | `1001` | Temurin 21.0.13 |
+| Python | `1002` | CPython 3.12.16 |
+| C++17 | `54` | GCC 9.2.0 with explicit `-std=c++17` |
+| Multi-file project | `89` | Trusted compile/run scripts |
 
-Check PostgreSQL and authenticated Redis readiness before starting Judge0:
+The C++ profile selects C++17 after caller options. The future runner must construct fixed trusted commands and must not accept arbitrary participant compiler flags.
 
-```sh
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml exec -T db pg_isready -U judge0 -d judge0
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml up -d server workers
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml ps
-```
+For multi-file Java, trusted scripts invoke `/usr/local/bin/java-with-budget.sh javac ...` and `/usr/local/bin/java-with-budget.sh java ...`. Multi-file C++ commands explicitly select `-std=c++17`. No Maven or pip downloads take place in submitted programs.
 
-Check `/about` at `http://127.0.0.1:2358/about`. API availability does not prove that submissions can execute. A representative compilation/execution check is also required.
+The Isolate wrapper passes the effective memory budget to the Java launcher. The launcher reserves 48 MiB for runtime JVM overhead and 64 MiB for the compiler, then derives the maximum heap from the remaining budget. The runtime young generation is capped at 4 MiB to leave room for large arrays. The minimum heap is 8 MiB. A very small total request limit can still prevent JVM startup, and the aggregate cgroup memory limit remains authoritative.
 
-To stop without deleting data:
+A compilation receives 10 CPU seconds, 20 wall seconds and 512000000 bytes. Execution retains its own request limits. Compiler cgroup accounting is reset before execution so compiler peaks and OOM events do not contaminate runtime measurements. These are per-engine-submission budgets. Aggregate budgets across multiple distinct runner compilation calls remain a runner responsibility.
 
-```sh
-docker compose --env-file judge0.conf -p codelobby-runner-judge0 -f compose.yaml -f compose.mac.yaml stop
-```
+## Isolation and local extensions
 
-Do not use `down -v` when preserving database data. The separate older `codelobby-judge0` project is not managed by these commands. Both projects cannot publish localhost port 2358 simultaneously.
+The image inherits an unofficial Judge0 fork and an older Debian base. Both sandbox services are privileged and the worker uses the Docker host cgroup namespace. Keep the API local. Production deployment and other hosts require separate review and verification.
 
-## Per-submission writable storage (Mac override only)
+The modern adapters are baked into the image from `image/`. They provide:
 
-`WORKSPACE_SIZE_MIB=64` and `WORKSPACE_INODES=4096` provide one tmpfs filesystem shared by a submission's `/box`, `/tmp` and `/dev/shm`. Source, extracted files, compilation output artifacts and temporary files in those directories consume the same budget. The count includes directories and infrastructure files, so fewer than 4096 participant-created files fit. The budget is shared across compilation and execution for that submission, not reset for each phase.
+- Suppression of the upstream environment dump while retaining ordinary logs.
+- A shared 64 MiB / 4096-inode tmpfs quota across `/box`, `/tmp` and `/dev/shm`.
+- Strict fixed-path workspace preparation and cleanup with ordinary unmounts.
+- Confirmed runtime memory-limit reporting based on Isolate metadata and new cgroup OOM-kill events. Exit 137 and participant text alone are not evidence.
+- Separate compilation budgets and fresh runtime accounting.
+- Reuse of Isolate box IDs after cleanup for the supported single worker (`COUNT=1`).
 
-Allowed settings are 4..256 MiB and 128..16384 inodes. Defaults apply when settings are absent. Invalid settings stop worker initialization or submission preparation rather than silently disabling protection. The adapter only supports the pinned image and Isolate box IDs 0..999. The existing provider's IDs beyond that range must be addressed before long-term use.
+Network access is disabled. Per-file and output limits remain enforced separately by the engine. tmpfs pages can count toward execution memory. A caught resource error can still result in a successful process, so the runner must evaluate the host test report rather than infer a verdict from output text. Host tests sharing a participant sandbox are not tamper-proof grading.
 
-The helper accepts no arbitrary paths. It requires root-owned, non-writable ancestors, rejects symlinks, checks mounted filesystem identity, and uses ordinary unmount rather than lazy unmount. There is no recursive root deletion in the helper. Failed preparation is rolled back. Failed release prevents the original cleanup from deleting through an active mount. Preparation/release failures produce an infrastructure error, not a participant verdict.
+Use `base64_encoded=true` when retrieving Judge0 diagnostics to handle arbitrary diagnostic bytes. HTTP polling timeouts do not prove program termination.
 
-The persistent bind mounts are released before Isolate removes its directories. No workspace is reused for the next submission. A worker crash can leave mounts in a running container: stop/recreate that worker before resuming, inspect for leftovers and never manually remove mounted directories. Recreating the container discards these temporary filesystems. This does not provide a durable recovery coordinator or automatic orphan reclamation.
+## Verification and image sources
 
-**Memory impact:** tmpfs consumes RAM. Pages written by the participant can be charged to its memory cgroup. It may hit the memory limit before filling its storage allocation. Recorded memory therefore includes filesystem activity and must not be presented as isolated Java-heap/function memory. Worker-wide aggregate capacity/concurrency still needs separate sizing. This is not an external persistent-disk quota.
+The packaged image was checked on Apple Silicon with Docker Desktop. The recorded local verification covered 68 engine submissions and 35 adapter tests, including language features, memory allocation, compiler/runtime budgets, network and secret isolation, output/process/storage limits, cleanup, multi-file tasks, recovery and restart. This does not claim verification on every Mac or Linux host. Anonymous registry download was verified with an empty Docker authentication configuration. Repository startup and restart each passed all three language checks. Local layer caches were available during this verification, so a completely cold installation on a second computer remains untested.
 
-Other checked locations (`/var/tmp`, `/run`, `/home` and `/usr/local`) are absent or not writable in the sandbox. The ordinary `/dev/shm` mount was found writable and is explicitly replaced for each run.
-
-The existing per-file `max_file_size` still applies. Stdout/stderr and Isolate metadata outside `/box` and `/tmp` are not charged to this tmpfs. Output sizes remain bounded separately by the engine's per-file limit. A caught ENOSPC error can produce a successful program result: the storage restriction is enforced by the filesystem, not inferred from participant text. There is no new runner API verdict in this change.
-
-## OOM and startup logging adapters
-
-The Mac startup adapter checks original startup-script hashes and suppresses only the `tee` environment dump. Normal service logs remain enabled. The OOM adapter checks the original job source hash, requires `cg-oom-killed:1` and an increase of the runtime sandbox's OOM-kill counter, and returns Judge0 status 12 with `Memory limit exceeded`. Exit 137, stderr text and peak-memory values alone are not proof. Timeout/internal failure classification is preserved. These adapters do not prove complete image confidentiality or cover all compilation OOM cases.
-
-## Local verification
-
-Verified in this Docker Desktop environment:
-
-- Python, C++ and Java simple programs succeed after workspace limiting, subject to the version limitations above.
-- `/box`, `/tmp` and `/dev/shm` report the same filesystem with 67,108,864 bytes and 4096 inodes.
-- Multiple 512 KiB files split between `/box`, `/tmp` and `/dev/shm` reach ENOSPC at the shared 64 MiB capacity.
-- Empty-file creation reaches ENOSPC after 4087 files while data blocks remain available.
-- A valid program succeeds after both resource-exhaustion attempts.
-- Success, runtime failure, timeout and compilation failure release workspace mounts and directories. A follow-up request cannot see the previous files.
-- Earlier bounded checks confirmed CPU/wall timeout, runtime OOM reporting, output/per-file/process limits, network rejection and absence of the checked secret paths/environment variables. These are focused checks, not an isolation audit.
-
-The original API can reject raw compiler diagnostics containing invalid text encodings. Use `base64_encoded=true` for diagnostic retrieval where needed. No API text-decoding change is included here.
-
-Run adapter regression tests from this directory:
+Run source-level adapter checks from this directory:
 
 ```sh
-ruby tests/confirmed_oom_test.rb "$PWD/report-confirmed-oom.rb"
-ruby tests/bounded_workspace_test.rb "$PWD/bounded-workspace.rb"
-bash -n isolate-with-workspace.sh
-bash -n workspace-helper.sh
-bash -n start-without-env-log.sh
+ruby tests/confirmed_oom_test.rb "$PWD/image/report-confirmed-oom.rb"
+ruby tests/bounded_workspace_test.rb "$PWD/image/bounded-workspace.rb"
+ruby tests/compilation_budget_test.rb "$PWD/image/compilation-budget.rb"
+python3 tests/isolate_phase_test.py
+python3 tests/java_budget_test.py
 ```
 
-All adapters are local provider extensions. The runner API contract and application implementation are unchanged.
+`Dockerfile`, `.dockerignore`, `image/` and `vendor/checksums.txt` record how the image is built. Optional rebuilding:
+
+```sh
+./fetch-toolchains.sh
+docker build --platform linux/amd64 --network none -t codelobby-judge0:local-build .
+```
+
+The fetch step downloads the pinned official Java archive and Python source, then verifies their SHA-256 checksums. The actual Docker build runs without network access. Downloaded build inputs and image archives are ignored by Git. Rebuilding is for image maintenance, not normal startup. Publishing a replacement version requires separate authorization and verification.
+
+## Legacy environment
+
+`compose.yaml` is the active modern recipe. `compose.mac.yaml` is an optional compatibility override and does not select another image.
+
+`compose.legacy.yaml` preserves the previous image and project `codelobby-runner-judge0` on port 2358. Root-level adapter scripts are retained unchanged because the existing legacy containers bind-mount them. The modern recipe does not load these root-level scripts. Keeping this recipe does not start a second environment automatically.
+
+To manage the retained legacy environment explicitly:
+
+```sh
+docker compose --env-file judge0.conf -f compose.legacy.yaml ps
+docker compose --env-file judge0.conf -f compose.legacy.yaml stop
+```
+
+Its original image has Java 13 and Python 3.8 and does not meet the modern contract baseline. Existing legacy containers and their database are preserved during the modern migration.

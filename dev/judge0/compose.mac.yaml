@@ -1,0 +1,7 @@
+# Optional compatibility override. The default configuration already supports Apple Silicon.
+services:
+  server:
+    platform: linux/amd64
+  workers:
+    platform: linux/amd64
+    cgroup: host

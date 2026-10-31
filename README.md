@@ -49,6 +49,14 @@ SHAs and the workflow token has read-only repository contents access. It does
 not commit, deploy, merge or change branch protection. Making the check required
 for merge is a separate repository setting.
 
+## Local Judge0 environment
+
+The optional [Judge0 development environment](dev/judge0/README.md) downloads a
+prebuilt image with Java 21, Python 3.12 and C++17 from the maintainer's personal
+container registry. Start it with `dev/judge0/start.sh` after starting Docker
+Desktop. It uses localhost port 2359 and is separate from the runner application.
+The runner's Judge0 client is not implemented by this infrastructure setup.
+
 ## Current scope
 
 The service provides HTTP health and `POST /internal/v1/runs`, strict request

@@ -4,6 +4,13 @@ spring:
 
 runner:
   internal-key: ${CODELOBBY_INTERNAL_KEY:}
+  judge0:
+    base-url: ${JUDGE0_URL:http://127.0.0.1:2359}
+    java-language-id: ${JUDGE0_JAVA_LANGUAGE_ID:1001}
+    connect-timeout: ${JUDGE0_CONNECT_TIMEOUT:2s}
+    request-timeout: ${JUDGE0_REQUEST_TIMEOUT:10s}
+    poll-interval: ${JUDGE0_POLL_INTERVAL:500ms}
+    result-timeout: ${JUDGE0_RESULT_TIMEOUT:60s}
 
 server:
   address: ${RUNNER_BIND_ADDRESS:127.0.0.1}

@@ -145,6 +145,25 @@ the real HTTP health endpoint without external services.
 | `RUNNER_PORT` | `8081` | HTTP port, separate from the backend's default port |
 | `RUNNER_BIND_ADDRESS` | `127.0.0.1` | Listening address; local access by default |
 | `CODELOBBY_INTERNAL_KEY` | empty; internal requests rejected | Shared backend/runner secret, at least 32 characters when configured |
+| `JUDGE0_URL` | `http://127.0.0.1:2359` | Judge0 HTTP(S) origin, without credentials, path, query or fragment |
+| `JUDGE0_JAVA_LANGUAGE_ID` | `1001` | Java 21 ID in the published development image, not a universal Judge0 ID |
+| `JUDGE0_CONNECT_TIMEOUT` | `2s` | Maximum time to establish a new HTTP connection |
+| `JUDGE0_REQUEST_TIMEOUT` | `10s` | Planned limit for one HTTP request |
+| `JUDGE0_POLL_INTERVAL` | `500ms` | Planned interval between result queries |
+| `JUDGE0_RESULT_TIMEOUT` | `60s` | Planned overall wait for a submission result |
+
+Judge0 settings are bound to `Judge0Properties` and validated at startup. Durations
+must be at least `1ms`, with connect timeout no greater than request timeout,
+request timeout no greater than result timeout, and poll interval shorter than
+result timeout. The base URL may have a single trailing slash, which is removed.
+Use a protected channel such as HTTPS when moving beyond localhost.
+
+This stage creates one reusable HTTP client with a connection timeout, no proxy
+and no automatic redirects. It does not send requests or check Judge0 availability.
+The request, polling and result timeouts are configuration for the upcoming client
+implementation and are not enforced yet. They are communication settings, separate
+from participant CPU/wall-time budgets. A communication timeout never confirms
+that a sandbox program has stopped. The Run endpoint still returns execution unavailable.
 
 For example, if port 8081 is already in use:
 

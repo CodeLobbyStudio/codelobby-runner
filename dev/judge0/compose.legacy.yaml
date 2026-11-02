@@ -1,0 +1,57 @@
+name: codelobby-runner-judge0
+services:
+  server:
+    image: mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2
+    platform: linux/amd64
+    command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
+    ports:
+      - "127.0.0.1:2358:2358"
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+
+  workers:
+    image: mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2
+    platform: linux/amd64
+    command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "workers"]
+    cgroup: host
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - ./start-without-env-log.sh:/usr/local/bin/start-without-env-log.sh:ro
+      - ./report-confirmed-oom.rb:/api/config/initializers/codelobby_confirmed_oom.rb:ro
+      - ./bounded-workspace.rb:/api/config/initializers/codelobby_bounded_workspace.rb:ro
+      - ./workspace-helper.sh:/usr/local/bin/workspace-helper.sh:ro
+      - ./isolate-with-workspace.sh:/opt/codelobby-bin/isolate:ro
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16.2
+    environment:
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - judge0-data:/var/lib/postgresql/data/
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2.4
+    command:
+      - bash
+      - -c
+      - 'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    restart: unless-stopped
+
+volumes:
+  judge0-data:

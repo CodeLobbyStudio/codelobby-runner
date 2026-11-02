@@ -1,0 +1,10 @@
+judge0.conf
+judge0.conf.*
+!judge0.conf.example
+vendor/*
+!vendor/checksums.txt
+__pycache__/
+tests/__pycache__/
+smoke-results.json
+*.tar
+*.tar.gz

@@ -200,7 +200,9 @@ and never confirms sandbox termination or cleanup.
 `Judge0Result` is internal engine data, not the public Run response or a completed
 CodeLobby grade. It decodes Base64 diagnostics, converts CPU/wall seconds to
 milliseconds and KiB memory to bytes, and retains exit code/signal. Invalid numbers,
-Base64, status IDs or mismatched tokens fail safely. Non-UTF-8 program output is
+Base64, status IDs or mismatched tokens fail safely. Judge0's LF/CRLF-wrapped
+Base64 diagnostics are accepted, while other invalid characters remain rejected.
+Non-UTF-8 program output is
 decoded with replacement characters. The result body is limited to 300000 bytes,
 stdout/stderr/compile output to 65536 decoded bytes each and message to 4096 bytes.
 Oversized data is rejected rather than silently presented as complete output.
@@ -211,7 +213,44 @@ Communication timeouts are separate from participant CPU/wall-time budgets and
 do not implement the complete Run/Submit deadline, queueing or resource cleanup.
 The client is not connected to the Run executor, which still returns execution
 unavailable. Client HTTP tests use an in-process server and require neither Docker
-nor Judge0. Verification against the real sandbox is a separate step.
+nor Judge0. Verification against the real sandbox is opt-in as described below.
+
+### Judge0 client integration checks
+
+With JDK 21 selected, start Docker Desktop and run from the repository root:
+
+```sh
+./dev/judge0/start.sh
+./mvnw -B -ntp -Pjudge0-integration verify
+```
+
+On Windows, start the environment using the Compose instructions in
+[dev/judge0/README.md](dev/judge0/README.md), then run:
+
+```powershell
+.\mvnw.cmd -B -ntp -Pjudge0-integration verify
+```
+
+The `judge0-integration` profile activates Maven Failsafe for `HttpJudge0LiveIT`.
+It runs in addition to the normal tests and uses the application's actual
+configuration and client beans, without starting the runner HTTP server.
+Judge0 must already be running. An unavailable or incompatible Judge0 fails the
+live checks, rather than silently skipping them. The target is restricted to
+localhost, with the default `JUDGE0_URL` and Java language ID shown above.
+
+The checks submit two controlled programs to the sandbox. One uses Java 21
+collection methods, verifies runtime version 21 and must print exactly `5` plus a
+newline with successful exit and available time/memory measurements. The other
+contains a syntax error and must return a compilation-error result with compiler
+diagnostics. A third check verifies a refused connection at an unused local port
+without stopping Judge0. It does not create a sandbox execution.
+
+Reports are written to `target/failsafe-reports/`. Ordinary `./mvnw clean verify`
+and the current CI workflow do not execute `*IT` tests or require Docker.
+The checks do not start/stop containers, change sandbox configuration, clean the
+Judge0 database or test the public Run endpoint. Keep submitted probe records as
+local diagnostic data. CPU, memory exhaustion and communication timeout behavior
+are covered by other environment/client tests, not by these three live checks.
 
 For example, if port 8081 is already in use:
 

@@ -179,10 +179,39 @@ POST requests at application level. Failure to receive a token does not establis
 whether Judge0 accepted the submission or whether execution has stopped, so callers
 must not automatically resubmit or release an execution slot on that assumption.
 
-Polling and the overall `result-timeout` are not implemented yet. Communication
-timeouts are separate from participant CPU/wall-time budgets. The client is not
-connected to the Run executor, which still returns execution unavailable.
-Client HTTP tests use an in-process server and require neither Docker nor Judge0.
+`Judge0Client.getSubmission(token)` performs one GET and can return a queued,
+processing or terminal engine state. It requests only token, status, stdout,
+stderr, compile output, message, CPU/wall time, memory and process exit information
+using `base64_encoded=true`. The returned token must match the requested token.
+Engine status IDs are validated, and Judge0 Internal Error becomes an
+infrastructure exception rather than a participant verdict. Compatible extra JSON
+fields are ignored. Optional missing/null diagnostics and measurements remain null,
+while available empty diagnostics remain empty strings.
+
+`Judge0Client.awaitResult(token)` polls this existing submission with `poll-interval`
+pauses until a terminal state or `result-timeout`. The overall deadline starts
+when this method is called, after token creation, and uses a monotonic clock.
+Each request timeout and each pause is capped by the remaining overall budget.
+HTTP/protocol failures stop polling immediately without retry or resubmission.
+Polling failures retain the known token through the exception's `submissionToken()`
+accessor for later reconciliation. Cancellation/timeout only ends local waiting
+and never confirms sandbox termination or cleanup.
+
+`Judge0Result` is internal engine data, not the public Run response or a completed
+CodeLobby grade. It decodes Base64 diagnostics, converts CPU/wall seconds to
+milliseconds and KiB memory to bytes, and retains exit code/signal. Invalid numbers,
+Base64, status IDs or mismatched tokens fail safely. Non-UTF-8 program output is
+decoded with replacement characters. The result body is limited to 300000 bytes,
+stdout/stderr/compile output to 65536 decoded bytes each and message to 4096 bytes.
+Oversized data is rejected rather than silently presented as complete output.
+Engine data may include hidden information and must pass evaluation/redaction
+before any participant-facing response. Result `toString()` hides diagnostics.
+
+Communication timeouts are separate from participant CPU/wall-time budgets and
+do not implement the complete Run/Submit deadline, queueing or resource cleanup.
+The client is not connected to the Run executor, which still returns execution
+unavailable. Client HTTP tests use an in-process server and require neither Docker
+nor Judge0. Verification against the real sandbox is a separate step.
 
 For example, if port 8081 is already in use:
 

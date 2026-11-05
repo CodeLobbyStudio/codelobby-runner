@@ -158,12 +158,31 @@ request timeout no greater than result timeout, and poll interval shorter than
 result timeout. The base URL may have a single trailing slash, which is removed.
 Use a protected channel such as HTTPS when moving beyond localhost.
 
-This stage creates one reusable HTTP client with a connection timeout, no proxy
-and no automatic redirects. It does not send requests or check Judge0 availability.
-The request, polling and result timeouts are configuration for the upcoming client
-implementation and are not enforced yet. They are communication settings, separate
-from participant CPU/wall-time budgets. A communication timeout never confirms
-that a sandbox program has stopped. The Run endpoint still returns execution unavailable.
+The configuration creates one reusable HTTP client with a connection timeout,
+no proxy and no automatic redirects. Startup does not contact Judge0.
+`Judge0Client.submitJava` can send one controlled Java source file and return its
+validated engine token. It uses the configured Java language ID and sends
+`POST /submissions?base64_encoded=true&wait=false`, with UTF-8 source/stdin encoded
+as Base64. It disables participant network access, sets one execution and zero CPU
+extra time, converts milliseconds to seconds exactly, and rounds bytes down to
+KiB so the memory allowance is never increased. The internal probe input allows
+131072 source bytes and 65536 stdin bytes with the contract's runtime budget range.
+It does not replace the public multi-file Run model or implement host test grading.
+
+Submission creation enforces `request-timeout` through receipt of the complete
+response, including a stalled body, and bounds the token response to 4096 bytes.
+Only HTTP 201 with a JSON UUID token is accepted. Connection failures, timeouts,
+HTTP errors, invalid responses and interruptions produce a `Judge0ClientException`
+with a typed reason and generic diagnostics. Source, stdin and engine response
+bodies are not logged or attached to these failures. The client does not retry
+POST requests at application level. Failure to receive a token does not establish
+whether Judge0 accepted the submission or whether execution has stopped, so callers
+must not automatically resubmit or release an execution slot on that assumption.
+
+Polling and the overall `result-timeout` are not implemented yet. Communication
+timeouts are separate from participant CPU/wall-time budgets. The client is not
+connected to the Run executor, which still returns execution unavailable.
+Client HTTP tests use an in-process server and require neither Docker nor Judge0.
 
 For example, if port 8081 is already in use:
 

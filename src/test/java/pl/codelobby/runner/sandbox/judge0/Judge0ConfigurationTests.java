@@ -20,7 +20,8 @@ class Judge0ConfigurationTests {
     @Test
     void startsWithoutJudge0AndProvidesOneReusableHttpClient() {
         contextRunner.run(context -> {
-            assertThat(context).hasNotFailed().hasSingleBean(Judge0Properties.class).hasSingleBean(HttpClient.class);
+            assertThat(context).hasNotFailed().hasSingleBean(Judge0Properties.class)
+                    .hasSingleBean(HttpClient.class).hasSingleBean(Judge0Client.class);
             var properties = context.getBean(Judge0Properties.class);
             assertThat(properties.baseUrl()).isEqualTo(URI.create("http://127.0.0.1:2359"));
             assertThat(properties.javaLanguageId()).isEqualTo(1001);

@@ -145,6 +145,112 @@ the real HTTP health endpoint without external services.
 | `RUNNER_PORT` | `8081` | HTTP port, separate from the backend's default port |
 | `RUNNER_BIND_ADDRESS` | `127.0.0.1` | Listening address; local access by default |
 | `CODELOBBY_INTERNAL_KEY` | empty; internal requests rejected | Shared backend/runner secret, at least 32 characters when configured |
+| `JUDGE0_URL` | `http://127.0.0.1:2359` | Judge0 HTTP(S) origin, without credentials, path, query or fragment |
+| `JUDGE0_JAVA_LANGUAGE_ID` | `1001` | Java 21 ID in the published development image, not a universal Judge0 ID |
+| `JUDGE0_CONNECT_TIMEOUT` | `2s` | Maximum time to establish a new HTTP connection |
+| `JUDGE0_REQUEST_TIMEOUT` | `10s` | Planned limit for one HTTP request |
+| `JUDGE0_POLL_INTERVAL` | `500ms` | Planned interval between result queries |
+| `JUDGE0_RESULT_TIMEOUT` | `60s` | Planned overall wait for a submission result |
+
+Judge0 settings are bound to `Judge0Properties` and validated at startup. Durations
+must be at least `1ms`, with connect timeout no greater than request timeout,
+request timeout no greater than result timeout, and poll interval shorter than
+result timeout. The base URL may have a single trailing slash, which is removed.
+Use a protected channel such as HTTPS when moving beyond localhost.
+
+The configuration creates one reusable HTTP client with a connection timeout,
+no proxy and no automatic redirects. Startup does not contact Judge0.
+`Judge0Client.submitJava` can send one controlled Java source file and return its
+validated engine token. It uses the configured Java language ID and sends
+`POST /submissions?base64_encoded=true&wait=false`, with UTF-8 source/stdin encoded
+as Base64. It disables participant network access, sets one execution and zero CPU
+extra time, converts milliseconds to seconds exactly, and rounds bytes down to
+KiB so the memory allowance is never increased. The internal probe input allows
+131072 source bytes and 65536 stdin bytes with the contract's runtime budget range.
+It does not replace the public multi-file Run model or implement host test grading.
+
+Submission creation enforces `request-timeout` through receipt of the complete
+response, including a stalled body, and bounds the token response to 4096 bytes.
+Only HTTP 201 with a JSON UUID token is accepted. Connection failures, timeouts,
+HTTP errors, invalid responses and interruptions produce a `Judge0ClientException`
+with a typed reason and generic diagnostics. Source, stdin and engine response
+bodies are not logged or attached to these failures. The client does not retry
+POST requests at application level. Failure to receive a token does not establish
+whether Judge0 accepted the submission or whether execution has stopped, so callers
+must not automatically resubmit or release an execution slot on that assumption.
+
+`Judge0Client.getSubmission(token)` performs one GET and can return a queued,
+processing or terminal engine state. It requests only token, status, stdout,
+stderr, compile output, message, CPU/wall time, memory and process exit information
+using `base64_encoded=true`. The returned token must match the requested token.
+Engine status IDs are validated, and Judge0 Internal Error becomes an
+infrastructure exception rather than a participant verdict. Compatible extra JSON
+fields are ignored. Optional missing/null diagnostics and measurements remain null,
+while available empty diagnostics remain empty strings.
+
+`Judge0Client.awaitResult(token)` polls this existing submission with `poll-interval`
+pauses until a terminal state or `result-timeout`. The overall deadline starts
+when this method is called, after token creation, and uses a monotonic clock.
+Each request timeout and each pause is capped by the remaining overall budget.
+HTTP/protocol failures stop polling immediately without retry or resubmission.
+Polling failures retain the known token through the exception's `submissionToken()`
+accessor for later reconciliation. Cancellation/timeout only ends local waiting
+and never confirms sandbox termination or cleanup.
+
+`Judge0Result` is internal engine data, not the public Run response or a completed
+CodeLobby grade. It decodes Base64 diagnostics, converts CPU/wall seconds to
+milliseconds and KiB memory to bytes, and retains exit code/signal. Invalid numbers,
+Base64, status IDs or mismatched tokens fail safely. Judge0's LF/CRLF-wrapped
+Base64 diagnostics are accepted, while other invalid characters remain rejected.
+Non-UTF-8 program output is
+decoded with replacement characters. The result body is limited to 300000 bytes,
+stdout/stderr/compile output to 65536 decoded bytes each and message to 4096 bytes.
+Oversized data is rejected rather than silently presented as complete output.
+Engine data may include hidden information and must pass evaluation/redaction
+before any participant-facing response. Result `toString()` hides diagnostics.
+
+Communication timeouts are separate from participant CPU/wall-time budgets and
+do not implement the complete Run/Submit deadline, queueing or resource cleanup.
+The client is not connected to the Run executor, which still returns execution
+unavailable. Client HTTP tests use an in-process server and require neither Docker
+nor Judge0. Verification against the real sandbox is opt-in as described below.
+
+### Judge0 client integration checks
+
+With JDK 21 selected, start Docker Desktop and run from the repository root:
+
+```sh
+./dev/judge0/start.sh
+./mvnw -B -ntp -Pjudge0-integration verify
+```
+
+On Windows, start the environment using the Compose instructions in
+[dev/judge0/README.md](dev/judge0/README.md), then run:
+
+```powershell
+.\mvnw.cmd -B -ntp -Pjudge0-integration verify
+```
+
+The `judge0-integration` profile activates Maven Failsafe for `HttpJudge0LiveIT`.
+It runs in addition to the normal tests and uses the application's actual
+configuration and client beans, without starting the runner HTTP server.
+Judge0 must already be running. An unavailable or incompatible Judge0 fails the
+live checks, rather than silently skipping them. The target is restricted to
+localhost, with the default `JUDGE0_URL` and Java language ID shown above.
+
+The checks submit two controlled programs to the sandbox. One uses Java 21
+collection methods, verifies runtime version 21 and must print exactly `5` plus a
+newline with successful exit and available time/memory measurements. The other
+contains a syntax error and must return a compilation-error result with compiler
+diagnostics. A third check verifies a refused connection at an unused local port
+without stopping Judge0. It does not create a sandbox execution.
+
+Reports are written to `target/failsafe-reports/`. Ordinary `./mvnw clean verify`
+and the current CI workflow do not execute `*IT` tests or require Docker.
+The checks do not start/stop containers, change sandbox configuration, clean the
+Judge0 database or test the public Run endpoint. Keep submitted probe records as
+local diagnostic data. CPU, memory exhaustion and communication timeout behavior
+are covered by other environment/client tests, not by these three live checks.
 
 For example, if port 8081 is already in use:
 

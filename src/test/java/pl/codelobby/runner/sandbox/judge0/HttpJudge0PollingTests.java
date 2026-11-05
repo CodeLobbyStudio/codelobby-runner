@@ -228,6 +228,38 @@ class HttpJudge0PollingTests {
                 () -> client(Duration.ofSeconds(2), Duration.ofMillis(40)).getSubmission(TOKEN));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\n", "\r\n"})
+    void acceptsRubyStyleBase64LineWrappingIncludingTrailingNewline(String newline) {
+        String output = "ż".repeat(32768);
+        var encoder = Base64.getMimeEncoder(60, newline.getBytes(StandardCharsets.US_ASCII));
+        String wrapped = encoder.encodeToString(output.getBytes(StandardCharsets.UTF_8)) + newline;
+        String message = encoder.encodeToString("Memory limit exceeded".getBytes(StandardCharsets.UTF_8)) + newline;
+        var body = result(12);
+        body.put("stdout", wrapped);
+        body.put("stderr", wrapped);
+        body.put("compile_output", wrapped);
+        body.put("message", message);
+        response = exchange -> reply(exchange, 200, body.toString());
+
+        var value = client(Duration.ofSeconds(2), Duration.ofMillis(40)).getSubmission(TOKEN);
+
+        assertThat(value.stdout()).isEqualTo(output);
+        assertThat(value.stderr()).isEqualTo(output);
+        assertThat(value.compileOutput()).isEqualTo(output);
+        assertThat(value.message()).isEqualTo("Memory limit exceeded");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"TQ%==\n", "TQ==\t", "TQ== ", "TQ==\nprivate-engine-secret"})
+    void stillRejectsBase64CharactersOtherThanPermittedLineEndings(String encoded) {
+        var body = result(3);
+        body.put("stdout", encoded);
+        response = exchange -> reply(exchange, 200, body.toString());
+        assertFailure(Reason.INVALID_RESPONSE,
+                () -> client(Duration.ofSeconds(2), Duration.ofMillis(40)).getSubmission(TOKEN));
+    }
+
     @Test
     void rejectsOversizedChunkedResultBeforeParsing() {
         response = exchange -> {

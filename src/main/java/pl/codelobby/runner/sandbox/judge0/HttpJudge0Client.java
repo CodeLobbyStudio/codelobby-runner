@@ -205,10 +205,22 @@ public final class HttpJudge0Client implements Judge0Client {
         if (node == null || node.isNull()) {
             return null;
         }
-        if (!node.isString() || node.asString().length() > 4 * ((maxBytes + 2) / 3)) {
+        if (!node.isString()) {
             throw new IllegalArgumentException("Invalid encoded diagnostic");
         }
-        byte[] bytes = Base64.getDecoder().decode(node.asString());
+        String encoded = node.asString();
+        int maxEncoded = 4 * ((maxBytes + 2) / 3);
+        // Judge0's Ruby Base64 encoder wraps at 60 columns and adds a trailing newline.
+        // Permit LF/CRLF wrapping only, not arbitrary characters accepted by a MIME decoder.
+        int maxWrapped = maxEncoded + 2 * ((maxEncoded + 59) / 60);
+        if (encoded.length() > maxWrapped) {
+            throw new IllegalArgumentException("Invalid encoded diagnostic");
+        }
+        encoded = encoded.replace("\r", "").replace("\n", "");
+        if (encoded.length() > maxEncoded) {
+            throw new IllegalArgumentException("Invalid encoded diagnostic");
+        }
+        byte[] bytes = Base64.getDecoder().decode(encoded);
         if (bytes.length > maxBytes) {
             throw new IllegalArgumentException("Diagnostic exceeds size limit");
         }

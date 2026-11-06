@@ -14,12 +14,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -30,6 +33,7 @@ import pl.codelobby.runner.model.RunResponse;
 import pl.codelobby.runner.model.RunResult;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.core.JacksonException;
+import org.slf4j.LoggerFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -256,6 +260,74 @@ class RunEndpointTests {
         var response = post(body);
         assertError(response, 500, "INTERNAL_SERVER_ERROR", false);
         assertThat(response.body()).doesNotContain("private-engine-report");
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void doesNotLogKeysOrSourceForAcceptedAndRejectedRequests(CapturedOutput output) throws Exception {
+        String starter = "private-starter-marker-issue9";
+        String helper = "private-helper-marker-issue9";
+        String publicTest = "private-public-test-marker-issue9";
+        String override = "private-override-marker-issue9";
+        String hiddenTest = "private-hidden-test-marker-issue9";
+        String wrongKey = "private-wrong-key-marker-issue9";
+        String malformed = "private-malformed-json-marker-issue9";
+        String oversized = "private-oversized-source-marker-issue9";
+        var json = mapper.readTree(body).asObject();
+        json.get("taskFiles").get(0).asObject().put("content", starter);
+        json.get("taskFiles").get(1).asObject().put("content", helper);
+        json.get("taskFiles").get(2).asObject().put("content", publicTest);
+        json.get("submissionFiles").get(0).asObject().put("content", override);
+        String sensitiveRequest = mapper.writeValueAsString(json);
+
+        assertThat(post(sensitiveRequest).statusCode()).isEqualTo(200);
+        assertThat(executor.calls.get()).isEqualTo(1);
+        executor.calls.set(0);
+
+        var unauthorized = CLIENT.send(baseRequest().header("X-CodeLobby-Internal-Key", wrongKey)
+                .POST(HttpRequest.BodyPublishers.ofString(sensitiveRequest)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertError(unauthorized, 401, "UNAUTHORIZED", false);
+        assertError(post("{\"requestId\":\"" + malformed + "\""), 400, "INVALID_REQUEST", false);
+
+        json.get("taskFiles").get(2).asObject().put("type", "HIDDEN_TEST").put("content", hiddenTest);
+        assertError(post(mapper.writeValueAsString(json)), 400, "INVALID_REQUEST", false);
+        json = mapper.readTree(sensitiveRequest).asObject();
+        json.get("submissionFiles").get(0).asObject().put("content", oversized + "x".repeat(131073));
+        assertError(post(mapper.writeValueAsString(json)), 413, "PAYLOAD_TOO_LARGE", false);
+        assertThat(executor.calls.get()).isZero();
+
+        LoggerFactory.getLogger(RunEndpointTests.class).info("Run API log capture is active");
+        assertThat(output.getAll()).contains("Run API log capture is active")
+                .doesNotContain(KEY, starter, helper, publicTest, override, hiddenTest, wrongKey, malformed, oversized);
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void doesNotLogSensitiveExecutorExceptionsOrParserFragments(CapturedOutput output) throws Exception {
+        String sourcePath = "private-source-path-marker-issue9.java";
+        String assertion = "private-assertion-marker-issue9";
+        String report = "private-engine-report-marker-issue9";
+        executor.failure = new IllegalStateException(sourcePath + " " + assertion + " " + KEY);
+
+        var response = post(body);
+
+        assertError(response, 500, "INTERNAL_SERVER_ERROR", false);
+        assertThat(response.body()).doesNotContain(sourcePath, assertion, KEY);
+        try {
+            mapper.readTree("{\"report\":\"" + report + "\"");
+        } catch (JacksonException exception) {
+            executor.failure = exception;
+        }
+        assertThat(executor.failure).isInstanceOf(JacksonException.class);
+        var parserResponse = post(body);
+        assertError(parserResponse, 500, "INTERNAL_SERVER_ERROR", false);
+        assertThat(parserResponse.body()).doesNotContain(report);
+        assertThat(executor.calls.get()).isEqualTo(2);
+
+        LoggerFactory.getLogger(RunEndpointTests.class).info("Executor failure log capture is active");
+        assertThat(output.getAll()).contains("Executor failure log capture is active")
+                .doesNotContain(KEY, sourcePath, assertion, report);
     }
 
     private HttpResponse<String> post(String json) throws Exception {

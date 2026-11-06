@@ -279,6 +279,9 @@ exposed, and health details are hidden.
 
 ### Internal Run endpoint
 
+See [internal API authentication and validation](docs/INTERNAL_API_VALIDATION.md)
+for the implemented checks, limits, signature-validation scope and regression tests.
+
 Use a cryptographically random key, keep it out of Git, browser payloads and logs,
 and configure the same secret in the backend. For example, on macOS/Linux:
 

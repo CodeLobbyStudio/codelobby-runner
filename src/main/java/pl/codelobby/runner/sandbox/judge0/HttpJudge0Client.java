@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -19,6 +20,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import pl.codelobby.runner.model.ExecutionLimits;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
@@ -29,6 +31,8 @@ import static pl.codelobby.runner.sandbox.judge0.Judge0ClientException.Reason;
 /** Bounded engine communication and polling, without grading or application-level POST retries. */
 public final class HttpJudge0Client implements Judge0Client {
 
+    private static final int MULTI_FILE_LANGUAGE_ID = 89;
+    private static final int MAX_ARCHIVE_BYTES = 2_000_000;
     private static final int MAX_TOKEN_RESPONSE_BYTES = 4096;
     private static final int MAX_RESULT_RESPONSE_BYTES = 300000;
     private static final String RESULT_FIELDS = "token,status,stdout,stderr,compile_output,message,"
@@ -48,11 +52,26 @@ public final class HttpJudge0Client implements Judge0Client {
     @Override
     public Judge0SubmissionToken submitJava(Judge0Submission submission) {
         Objects.requireNonNull(submission, "submission");
-        var limits = submission.limits();
-        byte[] payload = mapper.writeValueAsBytes(Map.of(
-                "source_code", encode(submission.sourceCode()),
-                "stdin", encode(submission.stdin()),
-                "language_id", properties.javaLanguageId(),
+        var fields = executionFields(properties.javaLanguageId(), submission.limits());
+        fields.put("source_code", encode(submission.sourceCode()));
+        fields.put("stdin", encode(submission.stdin()));
+        return submit(fields);
+    }
+
+    @Override
+    public Judge0SubmissionToken submitProject(byte[] archive, ExecutionLimits limits) {
+        if (archive == null || archive.length == 0 || archive.length > MAX_ARCHIVE_BYTES) {
+            throw new IllegalArgumentException("Invalid Judge0 project archive size");
+        }
+        Judge0Submission.validateLimits(limits);
+        var fields = executionFields(MULTI_FILE_LANGUAGE_ID, limits);
+        fields.put("additional_files", Base64.getEncoder().encodeToString(archive));
+        return submit(fields);
+    }
+
+    private static Map<String, Object> executionFields(int languageId, ExecutionLimits limits) {
+        return new HashMap<>(Map.of(
+                "language_id", languageId,
                 "cpu_time_limit", BigDecimal.valueOf(limits.cpuTimeMs(), 3),
                 "cpu_extra_time", 0,
                 "wall_time_limit", BigDecimal.valueOf(limits.wallTimeMs(), 3),
@@ -60,6 +79,10 @@ public final class HttpJudge0Client implements Judge0Client {
                 "memory_limit", limits.memoryLimitBytes() / 1024,
                 "enable_network", false,
                 "number_of_runs", 1));
+    }
+
+    private Judge0SubmissionToken submit(Map<String, Object> fields) {
+        byte[] payload = mapper.writeValueAsBytes(fields);
         var request = HttpRequest.newBuilder(properties.baseUrl().resolve(
                         "/submissions?base64_encoded=true&wait=false"))
                 .timeout(properties.requestTimeout())

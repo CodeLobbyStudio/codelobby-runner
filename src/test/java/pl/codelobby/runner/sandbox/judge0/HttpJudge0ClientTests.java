@@ -104,6 +104,28 @@ class HttpJudge0ClientTests {
     }
 
     @Test
+    void sendsArchiveAsAdditionalFilesWithTheProjectLanguageAndReturnsToken() throws Exception {
+        byte[] zip = {0x50, 0x4b, 0x03, 0x04, (byte) 0xff};
+
+        var token = client(Duration.ofSeconds(2)).submitProject(zip, new ExecutionLimits(1501, 2501, 127999999));
+
+        assertThat(token.value()).isEqualTo(TOKEN);
+        var request = captured.get(2, TimeUnit.SECONDS);
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.uri().toString()).isEqualTo("/submissions?base64_encoded=true&wait=false");
+        var json = mapper.readTree(request.body());
+        assertThat(Base64.getDecoder().decode(json.get("additional_files").asString())).isEqualTo(zip);
+        assertThat(json.get("language_id").asInt()).isEqualTo(89);
+        assertThat(json.get("cpu_time_limit").asDouble()).isEqualTo(1.501);
+        assertThat(json.get("wall_time_limit").asDouble()).isEqualTo(2.501);
+        assertThat(json.get("memory_limit").asLong()).isEqualTo(124999);
+        assertThat(json.get("enable_network").asBoolean()).isFalse();
+        assertThat(json.has("source_code")).isFalse();
+        assertThat(json.has("stdin")).isFalse();
+        assertThat(requests).hasValue(1);
+    }
+
+    @Test
     void preservesOneMillisecondBudgetAndEmptyStdin() throws Exception {
         client(Duration.ofSeconds(2)).submitJava(new Judge0Submission("class Main {}", "",
                 new ExecutionLimits(1, 1, 16000000)));

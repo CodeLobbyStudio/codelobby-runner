@@ -108,6 +108,39 @@ public final class HttpJudge0Client implements Judge0Client {
     }
 
     @Override
+    public Judge0SuiteReport getSuiteReport(Judge0SubmissionToken token) {
+        Objects.requireNonNull(token, "token");
+        var timeout = properties.requestTimeout();
+        var request = HttpRequest.newBuilder(properties.baseUrl().resolve("/codelobby/v1/suite-reports/" + token.value()))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .GET().build();
+        int maxReportBytes = Judge0SuiteReport.MAX_BYTES;
+        int maxEncodedBytes = 4 * ((maxReportBytes + 2) / 3);
+        var root = exchange(request, 200, maxEncodedBytes + 128, token, timeout);
+        try {
+            var stateNode = root.get("state");
+            if (stateNode == null || !stateNode.isString()) {
+                throw new IllegalArgumentException("Missing suite report state");
+            }
+            var state = Judge0SuiteReport.State.valueOf(stateNode.asString());
+            if (state != Judge0SuiteReport.State.AVAILABLE) {
+                if (root.has("report")) {
+                    throw new IllegalArgumentException("Unexpected suite report");
+                }
+                return new Judge0SuiteReport(state, null);
+            }
+            var report = root.get("report");
+            if (report == null || !report.isString() || report.asString().length() > maxEncodedBytes) {
+                throw new IllegalArgumentException("Invalid suite report");
+            }
+            return new Judge0SuiteReport(state, Base64.getDecoder().decode(report.asString()));
+        } catch (IllegalArgumentException exception) {
+            throw new Judge0ClientException(Reason.INVALID_RESPONSE, token);
+        }
+    }
+
+    @Override
     public Judge0Result awaitResult(Judge0SubmissionToken token) {
         Objects.requireNonNull(token, "token");
         long started = System.nanoTime();

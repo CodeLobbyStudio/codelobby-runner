@@ -13,6 +13,9 @@ public interface Judge0Client {
     /** One query, possibly returning a queued or processing state. */
     Judge0Result getSubmission(Judge0SubmissionToken token);
 
+    /** Fetch the separate suite report after the submission reaches a terminal state. */
+    Judge0SuiteReport getSuiteReport(Judge0SubmissionToken token);
+
     /** Poll an existing token within result-timeout, without resubmitting the program. */
     Judge0Result awaitResult(Judge0SubmissionToken token);
 }

@@ -1,0 +1,9 @@
+# Local-only prototype overlay for the pinned image.
+services:
+  server:
+    volumes:
+      - ./image/suite-report.rb:/api/config/initializers/codelobby_suite_report.rb:ro
+  workers:
+    volumes:
+      - ./image/suite-report.rb:/api/config/initializers/codelobby_suite_report.rb:ro
+      - ./image/read-suite-report.rb:/usr/local/bin/read-suite-report.rb:ro

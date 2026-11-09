@@ -44,6 +44,31 @@ JUDGE0_PORT=2360 ./start.sh
 
 `JUDGE0_CONFIG_FILE` selects a different private configuration file, using the same value for start and stop. `COMPOSE_PROJECT_NAME` selects a different project. Run only one modern worker deployment per Docker host because the image uses a dedicated fixed cgroup subtree.
 
+## Local suite-report prototype
+
+Start the regular environment first so that the private configuration exists, then apply the
+opt-in overlay from this directory:
+
+```sh
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --wait
+```
+
+After polling the submission to a terminal state, the runner can retrieve the suite report by
+token through the local Judge0 HTTP listener. Reports stay separate from stdout and stderr.
+Redis retains at most 32 report entries for up to five minutes. Use this prototype on the
+loopback-only listener. The submission token grants access to its report.
+
+From the runner repository root, verify report transfer with JDK 21:
+
+```sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=Judge0ProjectIntegrationTests test
+```
+
+Set `CODELOBBY_TEST_JUDGE0_URL` for a different local port. The report remains untrusted data
+until the runner validates it against the declared cases.
+
+
 ## Private configuration
 
 `judge0.conf` and temporary variants are ignored by Git. The file is mounted read-only into Judge0. Compose reads it through `--env-file` for PostgreSQL and Redis credentials. Never print resolved Compose configuration, commit secrets, or put the runner's internal key in this file.

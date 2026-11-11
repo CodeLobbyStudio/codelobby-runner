@@ -9,6 +9,14 @@ import java.nio.file.Path;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import pl.codelobby.runner.model.ExecutionLimits;
+import pl.codelobby.runner.sandbox.judge0.Judge0Client;
+import pl.codelobby.runner.sandbox.judge0.Judge0ClientException;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.json.JsonMapper;
@@ -17,13 +25,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "runner.internal-key=synthetic-test-key-not-a-secret-123456")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RunEndpointUnavailableTests {
+
+    @MockitoBean
+    private Judge0Client judge0;
 
     @LocalServerPort
     private int port;
 
     @Test
-    void defaultApplicationDoesNotPretendToEvaluateCode() throws Exception {
+    void returnsAControlledErrorWhenJudge0IsUnavailable() throws Exception {
+        when(judge0.submitProject(any(byte[].class), any(ExecutionLimits.class), any(Duration.class)))
+                .thenThrow(new Judge0ClientException(Judge0ClientException.Reason.UNAVAILABLE));
         var body = Files.readString(Path.of("docs/api/examples/run-request.json"));
         try (var client = HttpClient.newHttpClient()) {
             var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/internal/v1/runs"))

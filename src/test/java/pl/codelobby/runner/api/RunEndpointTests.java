@@ -28,6 +28,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import pl.codelobby.runner.core.SubmissionExecutor;
+import pl.codelobby.runner.core.RunDeadlineExceededException;
+import pl.codelobby.runner.core.RunQueueFullException;
+import pl.codelobby.runner.sandbox.judge0.Judge0ClientException;
 import pl.codelobby.runner.model.RunRequest;
 import pl.codelobby.runner.model.RunResponse;
 import pl.codelobby.runner.model.RunResult;
@@ -247,6 +250,24 @@ class RunEndpointTests {
         executor.failure = null;
         executor.result = null;
         assertError(post(body), 500, "INTERNAL_SERVER_ERROR", false);
+    }
+
+    @Test
+    void mapsEngineDeadlineAndQueueFailuresToSafeContractErrors() throws Exception {
+        executor.failure = new RunDeadlineExceededException();
+        assertError(post(body), 504, "REQUEST_DEADLINE_EXCEEDED", true);
+        executor.failure = new RunQueueFullException();
+        var full = post(body);
+        assertError(full, 429, "QUEUE_CAPACITY_EXCEEDED", true);
+        assertThat(full.headers().firstValue("Retry-After")).contains("1");
+        for (var reason : Judge0ClientException.Reason.values()) {
+            executor.failure = new Judge0ClientException(reason);
+            var response = post(body);
+            assertError(response, reason == Judge0ClientException.Reason.TIMEOUT ? 504 : 503,
+                    reason == Judge0ClientException.Reason.TIMEOUT
+                            ? "REQUEST_DEADLINE_EXCEEDED" : "EXECUTION_UNAVAILABLE", true);
+            assertThat(response.body()).doesNotContain("unconfirmed", "Judge0", "token");
+        }
     }
 
     @Test

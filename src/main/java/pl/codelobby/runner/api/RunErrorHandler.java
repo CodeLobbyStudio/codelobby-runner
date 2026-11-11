@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import pl.codelobby.runner.core.ExecutionUnavailableException;
 import pl.codelobby.runner.core.RequestValidationException;
+import pl.codelobby.runner.core.RunDeadlineExceededException;
+import pl.codelobby.runner.core.RunQueueFullException;
+import pl.codelobby.runner.sandbox.judge0.Judge0ClientException;
 
 /** Never echoes exception messages, request content, source paths or internal traces. */
 @RestControllerAdvice
@@ -43,6 +46,22 @@ public class RunErrorHandler {
     ResponseEntity<ApiError> unavailable() {
         return ResponseEntity.status(503).header("Cache-Control", "no-store").header("Retry-After", "1")
                 .body(new ApiError("EXECUTION_UNAVAILABLE", "Execution unavailable.", true));
+    }
+
+    @ExceptionHandler(Judge0ClientException.class)
+    ResponseEntity<ApiError> engineFailure(Judge0ClientException exception) {
+        return exception.reason() == Judge0ClientException.Reason.TIMEOUT ? deadline() : unavailable();
+    }
+
+    @ExceptionHandler(RunDeadlineExceededException.class)
+    ResponseEntity<ApiError> deadline() {
+        return error(504, "REQUEST_DEADLINE_EXCEEDED", "Request deadline exceeded.", true);
+    }
+
+    @ExceptionHandler(RunQueueFullException.class)
+    ResponseEntity<ApiError> fullQueue() {
+        return ResponseEntity.status(429).header("Cache-Control", "no-store").header("Retry-After", "1")
+                .body(new ApiError("QUEUE_CAPACITY_EXCEEDED", "Queue capacity exceeded.", true));
     }
 
     @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})

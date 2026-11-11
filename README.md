@@ -282,6 +282,24 @@ exposed, and health details are hidden.
 See [internal API authentication and validation](docs/INTERNAL_API_VALIDATION.md)
 for the implemented checks, limits, signature-validation scope and regression tests.
 
+Start Judge0 with the suite-report overlay before using the Java Run endpoint:
+
+~~~sh
+cd dev/judge0
+./start.sh
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --wait
+cd ../..
+~~~
+
+The overlay reads the local adapters in dev/judge0/image. After updating those files,
+wait for active work to finish, then reload the server and workers:
+
+~~~sh
+cd dev/judge0
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml restart server workers
+cd ../..
+~~~
+
 Use a cryptographically random key, keep it out of Git, browser payloads and logs,
 and configure the same secret in the backend. For example, on macOS/Linux:
 
@@ -302,11 +320,22 @@ curl --request POST 'http://127.0.0.1:8081/internal/v1/runs' \
   --data-binary @docs/api/examples/run-request.json
 ```
 
-Currently this valid request returns HTTP `503`, `Retry-After: 1`, and:
+A completed Java Run returns HTTP 200 with RunResponse, including the request and
+task-version IDs, the solution verdict, the number of passed tests and ordered
+public test results. Negative solution verdicts such as WRONG_ANSWER,
+COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 
-```json
-{"code":"EXECUTION_UNAVAILABLE","message":"Execution unavailable.","retryable":true}
-```
+One Run executes at a time and up to ten wait in FIFO order. The 60-second deadline
+includes queue waiting, compilation, evaluation and engine communication. A full
+queue returns 429 QUEUE_CAPACITY_EXCEEDED. Engine unavailability returns
+503 EXECUTION_UNAVAILABLE. An operation or engine communication timeout returns
+504 REQUEST_DEADLINE_EXCEEDED. Capacity errors and unavailability carry
+the Retry-After header with a value of 1.
+
+An unconfirmed execution or cleanup failure quarantines the pipeline. Further Runs
+receive 503. To recover locally, stop or restart the Judge0 workers and verify
+their readiness, then restart Runner. An HTTP timeout by itself does not establish
+that the engine stopped the program.
 
 A missing/incorrect key returns `401`; without configured key all internal calls
 are rejected. Configuring a nonempty key shorter than 32 characters prevents startup.
@@ -319,12 +348,20 @@ reading, including chunked requests. Invalid metadata/files return `400`, exceed
 size/count ceilings `413`, unsupported media/encoding `415`, unexpected processing
 failures a generic `500`. Responses include `Cache-Control: no-store`; error bodies
 contain exactly `code`, `message`, `retryable` and never echo submitted source or
-exception details. An ordinary negative solution verdict would still be HTTP `200`.
+exception details. An ordinary negative solution verdict uses HTTP `200`.
 
-HTTP tests use an executor supplied only through test configuration. No runtime
-switch enables a fake successful grader. Parser/report evaluation, output redaction,
-sandbox integration, aggregate resource accounting, deadlines, queuing and cleanup
-are not implemented by this transport layer. Do not connect an unverified executor.
+HTTP validation and error tests use a controlled executor. Real HTTP execution tests
+run against the local Judge0 with the suite-report overlay. With that environment
+running, use JDK 21 and enable the tests explicitly:
+
+~~~sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=RunEndpointIntegrationTests test
+~~~
+
+Set CODELOBBY_TEST_JUDGE0_URL when the test engine uses a different local port.
+Java is the implemented Run language. C++ and Python Run requests are rejected
+with 400 INVALID_REQUEST until their execution adapters are integrated.
 
 ## Project layout
 

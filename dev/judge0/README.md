@@ -58,11 +58,25 @@ token through the local Judge0 HTTP listener. Reports stay separate from stdout 
 Redis retains at most 32 report entries for up to five minutes. Use this prototype on the
 loopback-only listener. The submission token grants access to its report.
 
-From the runner repository root, verify report transfer with JDK 21:
+The overlay also returns external compiler CPU/wall measurements and enforces the remaining
+per-target compilation budget supplied by the runner. Each project carries a trusted budget
+header in its generated compile script.
+
+The internal JavaRunExecutor composes suite planning, archive creation, engine communication,
+report evaluation and request-level result aggregation. Evaluation and compilation share
+request-wide budgets. Communications use the remaining portion of the 60-second Run deadline.
+Compiler diagnostics are omitted from the aggregate response because they can include host
+test source. The default Spring configuration connects this executor to POST /internal/v1/runs.
+The HTTP adapter admits one active Run and ten pending Runs. If an infrastructure
+failure leaves execution or cleanup unconfirmed, admission stays quarantined.
+Recover locally by stopping or restarting Judge0 workers, verifying readiness,
+and restarting Runner.
+
+From the runner repository root, verify report transfer and the Java executor with JDK 21:
 
 ```sh
 CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
-  ./mvnw -B -ntp -Dtest=Judge0ProjectIntegrationTests test
+  ./mvnw -B -ntp -Dtest=Judge0ProjectIntegrationTests,JavaRunExecutorIntegrationTests test
 ```
 
 Set `CODELOBBY_TEST_JUDGE0_URL` for a different local port. The report remains untrusted data

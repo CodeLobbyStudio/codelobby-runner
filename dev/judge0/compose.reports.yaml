@@ -7,3 +7,5 @@ services:
     volumes:
       - ./image/suite-report.rb:/api/config/initializers/codelobby_suite_report.rb:ro
       - ./image/read-suite-report.rb:/usr/local/bin/read-suite-report.rb:ro
+      - ./image/compilation-budget.rb:/api/config/initializers/zz_codelobby_compilation_budget.rb:ro
+      - ./image/isolate-with-workspace.sh:/opt/codelobby-bin/isolate:ro

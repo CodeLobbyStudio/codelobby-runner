@@ -37,13 +37,21 @@ for arg in "$@"; do
 done
 if [[ "$phase" == compile ]]; then memory_kib=500000; fi
 [[ "$memory_kib" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "Missing aggregate memory limit" >&2; exit 2; }
+compile_cpu_ms=${CODELOBBY_COMPILE_CPU_MS:-10000}
+compile_wall_ms=${CODELOBBY_COMPILE_WALL_MS:-20000}
+if [[ "$phase" == compile ]]; then
+  [[ "$compile_cpu_ms" =~ ^[1-9][0-9]{0,4}$ && "$compile_wall_ms" =~ ^[1-9][0-9]{0,4}$ ]] || exit 2
+  ((compile_cpu_ms <= 10000 && compile_wall_ms <= 20000)) || exit 2
+fi
+printf -v compile_cpu '%d.%03d' "$((compile_cpu_ms / 1000))" "$((compile_cpu_ms % 1000))"
+printf -v compile_wall '%d.%03d' "$((compile_wall_ms / 1000))" "$((compile_wall_ms % 1000))"
 options=()
 while (($#)); do
   if [[ "$1" == -- ]]; then
     shift
     if [[ "$phase" == compile ]]; then
       # Isolate uses KiB: 500000 * 1024 = 512000000 bytes.
-      options+=(--time=10 --wall-time=20 --extra-time=0 --cg-mem=500000)
+      options+=("--time=$compile_cpu" "--wall-time=$compile_wall" --extra-time=0 --cg-mem=500000)
     fi
     exec "$real" "${options[@]}" -E "CODELOBBY_MEMORY_LIMIT_KIB=$memory_kib" --dir="/dev/shm=/var/local/lib/codelobby-workspaces/$id/shm:rw" -- "$@"
   fi

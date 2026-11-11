@@ -22,12 +22,16 @@ class IsolatePhaseTest(unittest.TestCase):
         self.shim.write_text(text.replace("real=/usr/local/bin/isolate", "real=" + shlex.quote(str(fake))))
         self.options = ["--cg", "-b", "7", "-t", "0.1", "-w", "0.2", "-x", "0.5", "--cg-mem=32000", "--run", "--", "/bin/bash", "run.sh"]
 
-    def invoke(self, phase, options=None):
+    def invoke(self, phase, options=None, cpu_ms=None, wall_ms=None):
         env = os.environ.copy()
         if phase is None:
             env.pop("CODELOBBY_ISOLATE_PHASE", None)
         else:
             env["CODELOBBY_ISOLATE_PHASE"] = phase
+        if cpu_ms is not None:
+            env["CODELOBBY_COMPILE_CPU_MS"] = cpu_ms
+        if wall_ms is not None:
+            env["CODELOBBY_COMPILE_WALL_MS"] = wall_ms
         return subprocess.run(["/bin/bash", str(self.shim), *(options or self.options)], env=env, capture_output=True, text=True)
 
     def test_execution_limits_are_unchanged(self):
@@ -45,12 +49,24 @@ class IsolatePhaseTest(unittest.TestCase):
         result = self.invoke("compile")
         self.assertEqual(result.returncode, 0)
         args = json.loads(result.stdout)
-        for value in ["--time=10", "--wall-time=20", "--extra-time=0", "--cg-mem=500000"]:
+        for value in ["--time=10.000", "--wall-time=20.000", "--extra-time=0", "--cg-mem=500000"]:
             self.assertIn(value, args)
         for value in ["0.1", "0.2", "0.5", "--cg-mem=32000"]:
             self.assertNotIn(value, args)
         self.assertEqual(500000 * 1024, 512000000)
         self.assertIn("CODELOBBY_MEMORY_LIMIT_KIB=500000", args)
+
+    def test_remaining_compilation_budget_is_enforced(self):
+        result = self.invoke("compile", cpu_ms="1234", wall_ms="5678")
+        self.assertEqual(result.returncode, 0)
+        args = json.loads(result.stdout)
+        self.assertIn("--time=1.234", args)
+        self.assertIn("--wall-time=5.678", args)
+
+    def test_invalid_compilation_budget_is_rejected(self):
+        for cpu, wall in [("0", "20000"), ("10001", "20000"), ("10000", "20001"), ("bad", "2")]:
+            with self.subTest(cpu=cpu, wall=wall):
+                self.assertNotEqual(self.invoke("compile", cpu_ms=cpu, wall_ms=wall).returncode, 0)
 
     def test_compiler_requires_cgroups(self):
         options = self.options.copy(); options.remove("--cg")

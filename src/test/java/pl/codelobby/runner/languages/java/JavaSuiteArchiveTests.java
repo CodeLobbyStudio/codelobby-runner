@@ -10,6 +10,7 @@ import java.util.zip.ZipInputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import pl.codelobby.runner.core.PreparedSourceFile;
 import pl.codelobby.runner.model.FileType;
@@ -45,6 +46,20 @@ class JavaSuiteArchiveTests {
                 "CODELOBBY_REPORT_PATH=\"$PWD/.codelobby/report.ndjson\"",
                 ": > \"$CODELOBBY_REPORT_PATH\"",
                 "/usr/local/bin/java-with-budget.sh java -classpath .codelobby/classes 'tests.Public$Nested'");
+    }
+
+    @Test
+    void packagesTheRemainingCompilerBudgetForTheWorker() throws IOException {
+        var plan = plan("Tests", List.of(new PreparedSourceFile("Tests.java", FileType.VISIBLE_TEST, "")));
+        assertThat(unpack(archive.create(plan, 1234, 5678)).get("compile"))
+                .contains("# CODELOBBY_BUILD_LIMITS 1234 5678");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,20000", "10001,20000", "10000,0", "10000,20001"})
+    void rejectsInvalidCompilationBudgets(int cpu, int wall) {
+        var plan = plan("Tests", List.of(new PreparedSourceFile("Tests.java", FileType.VISIBLE_TEST, "")));
+        assertThatThrownBy(() -> archive.create(plan, cpu, wall)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @ParameterizedTest

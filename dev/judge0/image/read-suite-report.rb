@@ -2,11 +2,28 @@
 id = ARGV.fetch(0)
 exit 1 unless /\A(?:0|[1-9][0-9]{0,2})\z/.match?(id)
 
+mode = ARGV.fetch(1, "report")
+exit 1 unless ["report", "compile-budget"].include?(mode)
 limit = 1_000_000
 flags = File::RDONLY | File::NOFOLLOW | File::NONBLOCK
 begin
   File.open("/var/local/lib/isolate/#{id}/box", flags) do |box|
     exit 2 unless box.stat.directory?
+    if mode == "compile-budget"
+      path = "/proc/self/fd/#{box.fileno}/compile"
+      exit 2 unless File.lstat(path).file?
+      File.open(path, flags) do |script|
+        exit 1 unless script.stat.file? && script.stat.nlink == 1
+        header = (script.read(4096) || "").split("\n").fetch(1, "")
+        exit 2 unless header.start_with?("# CODELOBBY_BUILD_LIMITS")
+        match = /\A# CODELOBBY_BUILD_LIMITS ([1-9][0-9]{0,4}) ([1-9][0-9]{0,4})\z/.match(header)
+        exit 1 unless match
+        cpu, wall = match.captures.map { |value| Integer(value, 10) }
+        exit 1 unless (1..10_000).cover?(cpu) && (1..20_000).cover?(wall)
+        STDOUT.write("#{cpu} #{wall}")
+      end
+      exit 0
+    end
     File.open("/proc/self/fd/#{box.fileno}/.codelobby", flags) do |directory|
       exit 2 unless directory.stat.directory?
       path = "/proc/self/fd/#{directory.fileno}/report.ndjson"

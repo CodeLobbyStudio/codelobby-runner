@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -109,6 +110,26 @@ class Judge0ProjectIntegrationTests {
             } else {
                 assertThat(report.content()).isNull();
             }
+        }
+    }
+    @Test
+    @EnabledIfEnvironmentVariable(named = "CODELOBBY_TEST_JUDGE0_REPORTS", matches = "true")
+    void enforcesTheRemainingCompilationCpuBudgetAndReportsItsUsage() {
+        var plan = new JavaSuitePlan("suite", "Tests", List.of(
+                new PreparedSourceFile("Tests.java", FileType.VISIBLE_TEST,
+                        "public class Tests { public static void main(String[] args) {} }")), List.of("case"));
+        var properties = new Judge0Properties(
+                URI.create(System.getenv().getOrDefault("CODELOBBY_TEST_JUDGE0_URL", "http://127.0.0.1:2359")),
+                1001, Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(500), Duration.ofSeconds(60));
+        try (var http = new Judge0Configuration().judge0HttpClient(properties)) {
+            Judge0Client client = new HttpJudge0Client(http, properties);
+            var token = client.submitProject(new JavaSuiteArchive().create(plan, 1, 20_000),
+                    new ExecutionLimits(2000, 5000, 128000000));
+            var result = client.awaitResult(token);
+
+            assertThat(result.status()).isEqualTo(Judge0Status.COMPILATION_ERROR);
+            assertThat(result.compileOutput()).contains("Compilation time limit exceeded");
+            assertThat(client.getSuiteReport(token).compilation()).isNotNull();
         }
     }
 }

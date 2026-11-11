@@ -19,7 +19,9 @@ module CodeLobbyCompilationBudget
     if @codelobby_compiling && command.start_with?("isolate ")
       @codelobby_compilation_started = true
       # This environment assignment belongs only to the new shell process.
-      super("CODELOBBY_ISOLATE_PHASE=compile " + command)
+      limits = @codelobby_build_limits
+      budget = limits ? "CODELOBBY_COMPILE_CPU_MS=#{limits[0]} CODELOBBY_COMPILE_WALL_MS=#{limits[1]} " : ""
+      super(budget + "CODELOBBY_ISOLATE_PHASE=compile " + command)
     else
       super
     end

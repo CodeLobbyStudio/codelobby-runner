@@ -46,6 +46,34 @@ module CodeLobbySuiteReport
 
   private
 
+  def compile
+    @codelobby_build_limits = nil
+    @codelobby_build_usage = nil
+    if submission.is_project
+      header, result = Open3.capture2("/usr/bin/sudo", "-n", "/usr/local/ruby-2.7.0/bin/ruby",
+                                     "/usr/local/bin/read-suite-report.rb", Integer(box_id).to_s, "compile-budget")
+      raise "Invalid project compilation budget" unless [0, 2].include?(result.exitstatus)
+      @codelobby_build_limits = header.split.map { |value| Integer(value, 10) } if result.success?
+    end
+    outcome = super
+    store_suite_report(state: "MISSING") if outcome == :failure
+    outcome
+  end
+
+  def get_metadata
+    metadata = super
+    if @codelobby_compiling && metadata[:time] && metadata[:"time-wall"]
+      cpu = Float(metadata[:time]) * 1000
+      wall = Float(metadata[:"time-wall"]) * 1000
+      if cpu.finite? && wall.finite? && cpu >= 0 && wall >= 0
+        @codelobby_build_usage = {cpuTimeMs: cpu, wallTimeMs: wall}
+        # Compile failures become terminal before compile returns. Publish usage before that save.
+        store_suite_report(state: "MISSING")
+      end
+    end
+    metadata
+  end
+
   def verify
     super
     return unless submission.is_project && submission.number_of_runs == 1 && TOKEN.match?(submission.token)
@@ -58,6 +86,12 @@ module CodeLobbySuiteReport
             when 3 then {state: "TOO_LARGE"}
             else return
             end
+    store_suite_report(value)
+  end
+
+  def store_suite_report(value)
+    return unless submission.is_project && TOKEN.match?(submission.token)
+    value[:compilation] = @codelobby_build_usage if @codelobby_build_usage
     CodeLobbySuiteReport.redis.eval(STORE, keys: [INDEX, KEY_PREFIX + submission.token],
                                    argv: [Time.now.to_f, JSON.generate(value)])
   rescue Redis::BaseError, SystemCallError

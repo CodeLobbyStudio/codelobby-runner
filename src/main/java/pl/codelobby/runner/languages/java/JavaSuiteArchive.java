@@ -19,6 +19,7 @@ public final class JavaSuiteArchive {
             Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
     private static final String COMPILE = """
             #!/bin/bash
+            # CODELOBBY_BUILD_LIMITS %d %d
             set -euo pipefail
             mkdir -p .codelobby/classes
             sources=(
@@ -35,6 +36,14 @@ public final class JavaSuiteArchive {
             """;
 
     public byte[] create(JavaSuitePlan plan) {
+        return create(plan, 10_000, 20_000);
+    }
+
+    public byte[] create(JavaSuitePlan plan, int compilationCpuMs, int compilationWallMs) {
+        if (compilationCpuMs < 1 || compilationCpuMs > 10_000
+                || compilationWallMs < 1 || compilationWallMs > 20_000) {
+            throw new IllegalArgumentException("Invalid Java compilation budget");
+        }
         if (!MAIN_CLASS.matcher(plan.mainClass()).matches() || plan.files().isEmpty()) {
             throw new IllegalArgumentException("Invalid Java suite archive input");
         }
@@ -50,7 +59,7 @@ public final class JavaSuiteArchive {
                 writeEntry(zip, entry, file.content());
                 sources.append("    '").append(entry).append("'\n");
             }
-            writeEntry(zip, "compile", COMPILE.formatted(sources));
+            writeEntry(zip, "compile", COMPILE.formatted(compilationCpuMs, compilationWallMs, sources));
             writeEntry(zip, "run", RUN.formatted(plan.mainClass()));
         } catch (IOException exception) {
             // ZIP errors can include entry names. Keep them out of runner diagnostics.

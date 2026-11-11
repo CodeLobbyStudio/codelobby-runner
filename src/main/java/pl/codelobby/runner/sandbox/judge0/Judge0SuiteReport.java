@@ -3,7 +3,11 @@ package pl.codelobby.runner.sandbox.judge0;
 import java.util.Objects;
 
 /** Raw, untrusted suite report, separate from sandbox stdout and stderr. */
-public record Judge0SuiteReport(State state, byte[] content) {
+public record Judge0SuiteReport(State state, byte[] content, Judge0CompilationUsage compilation) {
+
+    public Judge0SuiteReport(State state, byte[] content) {
+        this(state, content, null);
+    }
 
     static final int MAX_BYTES = 1_000_000;
 

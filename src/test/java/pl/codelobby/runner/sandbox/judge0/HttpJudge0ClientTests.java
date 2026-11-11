@@ -126,6 +126,49 @@ class HttpJudge0ClientTests {
     }
 
     @Test
+    void readsExternalCompilationMeasurementsAlongsideTheSeparateReport() {
+        response = exchange -> reply(exchange, 200, "application/json",
+                "{\"state\":\"MISSING\",\"compilation\":{\"cpuTimeMs\":123.5,\"wallTimeMs\":300.25}}");
+
+        var report = client(Duration.ofSeconds(2)).getSuiteReport(new Judge0SubmissionToken(TOKEN));
+
+        assertThat(report.state()).isEqualTo(Judge0SuiteReport.State.MISSING);
+        assertThat(report.compilation()).isEqualTo(new Judge0CompilationUsage(123.5, 300.25));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"cpuTimeMs\":-1,\"wallTimeMs\":2}",
+            "{\"cpuTimeMs\":1}",
+            "{\"cpuTimeMs\":\"1\",\"wallTimeMs\":2}",
+            "{\"cpuTimeMs\":1e9999,\"wallTimeMs\":2}"
+    })
+    void rejectsInvalidCompilationMeasurements(String compilation) {
+        response = exchange -> reply(exchange, 200, "application/json",
+                "{\"state\":\"MISSING\",\"compilation\":" + compilation + "}");
+        assertThatThrownBy(() -> client(Duration.ofSeconds(2)).getSuiteReport(new Judge0SubmissionToken(TOKEN)))
+                .isInstanceOfSatisfying(Judge0ClientException.class,
+                        exception -> assertThat(exception.reason()).isEqualTo(Reason.INVALID_RESPONSE));
+    }
+
+    @Test
+    void boundsTheProjectPostByTheRemainingOperationDeadlineWithoutRetry() {
+        response = exchange -> {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            reply(exchange, 201, "application/json", TOKEN_JSON);
+        };
+        assertThatThrownBy(() -> client(Duration.ofSeconds(2)).submitProject(
+                new byte[] {1}, new ExecutionLimits(2000, 5000, 128000000), Duration.ofMillis(50)))
+                .isInstanceOfSatisfying(Judge0ClientException.class,
+                        exception -> assertThat(exception.reason()).isEqualTo(Reason.TIMEOUT));
+        assertThat(requests.get()).isLessThanOrEqualTo(1);
+    }
+
+    @Test
     void preservesOneMillisecondBudgetAndEmptyStdin() throws Exception {
         client(Duration.ofSeconds(2)).submitJava(new Judge0Submission("class Main {}", "",
                 new ExecutionLimits(1, 1, 16000000)));

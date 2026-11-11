@@ -10,7 +10,14 @@ public record Judge0Submission(String sourceCode, String stdin, ExecutionLimits 
     public Judge0Submission {
         requireText(sourceCode, 131072);
         requireText(stdin, 65536);
-        if (sourceCode.isBlank() || limits == null
+        if (sourceCode.isBlank()) {
+            throw new IllegalArgumentException("Invalid Judge0 submission");
+        }
+        validateLimits(limits);
+    }
+
+    static void validateLimits(ExecutionLimits limits) {
+        if (limits == null
                 || limits.cpuTimeMs() < 1 || limits.cpuTimeMs() > 2000
                 || limits.wallTimeMs() < limits.cpuTimeMs() || limits.wallTimeMs() > 5000
                 || limits.memoryLimitBytes() < 16000000L || limits.memoryLimitBytes() > 128000000L) {

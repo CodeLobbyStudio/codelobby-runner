@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -19,6 +20,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import pl.codelobby.runner.model.ExecutionLimits;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
@@ -29,6 +31,8 @@ import static pl.codelobby.runner.sandbox.judge0.Judge0ClientException.Reason;
 /** Bounded engine communication and polling, without grading or application-level POST retries. */
 public final class HttpJudge0Client implements Judge0Client {
 
+    private static final int MULTI_FILE_LANGUAGE_ID = 89;
+    private static final int MAX_ARCHIVE_BYTES = 2_000_000;
     private static final int MAX_TOKEN_RESPONSE_BYTES = 4096;
     private static final int MAX_RESULT_RESPONSE_BYTES = 300000;
     private static final String RESULT_FIELDS = "token,status,stdout,stderr,compile_output,message,"
@@ -48,11 +52,31 @@ public final class HttpJudge0Client implements Judge0Client {
     @Override
     public Judge0SubmissionToken submitJava(Judge0Submission submission) {
         Objects.requireNonNull(submission, "submission");
-        var limits = submission.limits();
-        byte[] payload = mapper.writeValueAsBytes(Map.of(
-                "source_code", encode(submission.sourceCode()),
-                "stdin", encode(submission.stdin()),
-                "language_id", properties.javaLanguageId(),
+        var fields = executionFields(properties.javaLanguageId(), submission.limits());
+        fields.put("source_code", encode(submission.sourceCode()));
+        fields.put("stdin", encode(submission.stdin()));
+        return submit(fields, properties.requestTimeout());
+    }
+
+    @Override
+    public Judge0SubmissionToken submitProject(byte[] archive, ExecutionLimits limits) {
+        return submitProject(archive, limits, properties.requestTimeout());
+    }
+
+    @Override
+    public Judge0SubmissionToken submitProject(byte[] archive, ExecutionLimits limits, Duration timeout) {
+        if (archive == null || archive.length == 0 || archive.length > MAX_ARCHIVE_BYTES) {
+            throw new IllegalArgumentException("Invalid Judge0 project archive size");
+        }
+        Judge0Submission.validateLimits(limits);
+        var fields = executionFields(MULTI_FILE_LANGUAGE_ID, limits);
+        fields.put("additional_files", Base64.getEncoder().encodeToString(archive));
+        return submit(fields, boundedTimeout(timeout, properties.requestTimeout()));
+    }
+
+    private static Map<String, Object> executionFields(int languageId, ExecutionLimits limits) {
+        return new HashMap<>(Map.of(
+                "language_id", languageId,
                 "cpu_time_limit", BigDecimal.valueOf(limits.cpuTimeMs(), 3),
                 "cpu_extra_time", 0,
                 "wall_time_limit", BigDecimal.valueOf(limits.wallTimeMs(), 3),
@@ -60,14 +84,18 @@ public final class HttpJudge0Client implements Judge0Client {
                 "memory_limit", limits.memoryLimitBytes() / 1024,
                 "enable_network", false,
                 "number_of_runs", 1));
+    }
+
+    private Judge0SubmissionToken submit(Map<String, Object> fields, Duration timeout) {
+        byte[] payload = mapper.writeValueAsBytes(fields);
         var request = HttpRequest.newBuilder(properties.baseUrl().resolve(
                         "/submissions?base64_encoded=true&wait=false"))
-                .timeout(properties.requestTimeout())
+                .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
                 .build();
-        var root = exchange(request, 201, MAX_TOKEN_RESPONSE_BYTES, null, properties.requestTimeout());
+        var root = exchange(request, 201, MAX_TOKEN_RESPONSE_BYTES, null, timeout);
         try {
             var token = root.get("token");
             if (token == null || !token.isString()) {
@@ -85,14 +113,67 @@ public final class HttpJudge0Client implements Judge0Client {
     }
 
     @Override
+    public Judge0SuiteReport getSuiteReport(Judge0SubmissionToken token) {
+        return getSuiteReport(token, properties.requestTimeout());
+    }
+
+    @Override
+    public Judge0SuiteReport getSuiteReport(Judge0SubmissionToken token, Duration timeout) {
+        Objects.requireNonNull(token, "token");
+        timeout = boundedTimeout(timeout, properties.requestTimeout());
+        var request = HttpRequest.newBuilder(properties.baseUrl().resolve("/codelobby/v1/suite-reports/" + token.value()))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .GET().build();
+        int maxReportBytes = Judge0SuiteReport.MAX_BYTES;
+        int maxEncodedBytes = 4 * ((maxReportBytes + 2) / 3);
+        var root = exchange(request, 200, maxEncodedBytes + 512, token, timeout);
+        try {
+            var stateNode = root.get("state");
+            if (stateNode == null || !stateNode.isString()) {
+                throw new IllegalArgumentException("Missing suite report state");
+            }
+            var state = Judge0SuiteReport.State.valueOf(stateNode.asString());
+            var build = root.get("compilation");
+            Judge0CompilationUsage compilation = null;
+            if (build != null && !build.isNull()) {
+                if (!build.isObject() || !build.has("cpuTimeMs") || !build.get("cpuTimeMs").isNumber()
+                        || !build.has("wallTimeMs") || !build.get("wallTimeMs").isNumber()) {
+                    throw new IllegalArgumentException("Invalid compilation measurements");
+                }
+                compilation = new Judge0CompilationUsage(
+                        build.get("cpuTimeMs").asDouble(), build.get("wallTimeMs").asDouble());
+            }
+            if (state != Judge0SuiteReport.State.AVAILABLE) {
+                if (root.has("report")) {
+                    throw new IllegalArgumentException("Unexpected suite report");
+                }
+                return new Judge0SuiteReport(state, null, compilation);
+            }
+            var report = root.get("report");
+            if (report == null || !report.isString() || report.asString().length() > maxEncodedBytes) {
+                throw new IllegalArgumentException("Invalid suite report");
+            }
+            return new Judge0SuiteReport(state, Base64.getDecoder().decode(report.asString()), compilation);
+        } catch (IllegalArgumentException exception) {
+            throw new Judge0ClientException(Reason.INVALID_RESPONSE, token);
+        }
+    }
+
+    @Override
     public Judge0Result awaitResult(Judge0SubmissionToken token) {
+        return awaitResult(token, properties.resultTimeout());
+    }
+
+    @Override
+    public Judge0Result awaitResult(Judge0SubmissionToken token, Duration timeout) {
         Objects.requireNonNull(token, "token");
         long started = System.nanoTime();
-        long budget = nanos(properties.resultTimeout());
+        long budget = nanos(boundedTimeout(timeout, properties.resultTimeout()));
         while (true) {
             long remaining = remaining(started, budget, token);
-            var timeout = Duration.ofNanos(Math.min(nanos(properties.requestTimeout()), remaining));
-            var result = getSubmission(token, timeout);
+            var queryTimeout = Duration.ofNanos(Math.min(nanos(properties.requestTimeout()), remaining));
+            var result = getSubmission(token, queryTimeout);
             remaining = remaining(started, budget, token);
             if (result.status().finished()) {
                 return result;
@@ -183,6 +264,13 @@ public final class HttpJudge0Client implements Judge0Client {
         } catch (IOException | IllegalArgumentException | tools.jackson.core.JacksonException exception) {
             throw new Judge0ClientException(Reason.INVALID_RESPONSE, token);
         }
+    }
+
+    private static Duration boundedTimeout(Duration requested, Duration configured) {
+        if (requested == null || requested.isZero() || requested.isNegative()) {
+            throw new IllegalArgumentException("Judge0 timeout must be positive");
+        }
+        return requested.compareTo(configured) < 0 ? requested : configured;
     }
 
     private static long remaining(long started, long budget, Judge0SubmissionToken token) {

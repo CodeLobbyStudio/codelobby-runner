@@ -1,9 +1,9 @@
 # Internal Run authentication and validation
 
 This describes the implemented boundary for `POST /internal/v1/runs` and the
-coverage for Issue #9. Valid requests currently reach the configured executor.
-Without a verified execution implementation, that executor returns execution
-unavailable. This is not a claim of complete Run/Submit evaluation support.
+coverage for Issue #9. Valid Java requests reach the configured JavaRunCoordinator
+and JavaRunExecutor, which evaluate public suites through the local Judge0
+suite-report adapter. See the README for startup and real HTTP verification.
 
 ## Request processing
 
@@ -46,8 +46,7 @@ The multi-file contract has no fixed solution class or method-signature allowlis
 Host test code defines the expected calls and assertions. Request validation checks
 the manifest and execution metadata, not source-language semantics. A valid Java
 entry-class name does not establish that the class exists or has a working main.
-Compilation in the sandbox will check syntax and solution-signature compatibility
-when the execution stages are implemented. Broken Host configuration must remain
+Java compilation in the sandbox checks syntax and solution-signature compatibility. Broken Host configuration must remain
 distinct from participant errors under the contract's evaluation rules.
 
 ## Verification

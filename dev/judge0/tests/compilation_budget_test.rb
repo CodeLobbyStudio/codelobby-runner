@@ -38,6 +38,12 @@ class CompilationBudgetTest < Minitest::Test
     assert job.commands[0].start_with?("CODELOBBY_ISOLATE_PHASE=compile isolate ")
     assert_equal "sudo rm compile.sh", job.commands[1]
   end
+  def test_forwards_only_the_trusted_per_target_compilation_budget
+    job=PhaseBase.new
+    job.instance_variable_set(:@codelobby_build_limits, [1234, 5678])
+    job.send(:compile)
+    assert job.commands.first.start_with?("CODELOBBY_COMPILE_CPU_MS=1234 CODELOBBY_COMPILE_WALL_MS=5678 CODELOBBY_ISOLATE_PHASE=compile isolate ")
+  end
   def test_execution_is_not_marked_as_compilation
     job=PhaseBase.new; job.send(:compile); job.send(:run)
     assert_equal "isolate --cg -b 7 --run -- /bin/bash run.sh",job.commands.last

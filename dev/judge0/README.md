@@ -4,11 +4,16 @@ Owned by codelobby-runner. The default Compose configuration uses the prebuilt i
 
 The image provides Java 21, Python 3.12 and C++17, including the local workspace, OOM and compilation-budget adapters. Normal startup downloads it automatically. No image archive or local image build is required.
 
-This is a local development and MVP demonstration environment. The runner's Judge0 client and complete execution flow are separate implementation work. Starting these services does not make the current runner HTTP endpoint execute submissions.
+This is a local development and MVP demonstration environment. The Java Run endpoint uses
+this environment through the runner's HTTP client. Start the runner separately with its
+internal key. Submit and C++/Python Run are not implemented.
+
+See [local setup for macOS, Linux and Windows/WSL2](../../docs/LOCAL_SETUP.md) for the full
+start-to-Run procedure, requirements and verification status.
 
 ## Start
 
-Install and start Docker Desktop on macOS. The image is amd64 and Apple Silicon uses emulation. Docker needs sufficient storage and memory. The tested Docker VM had approximately 8 GiB RAM. Allow at least 20 GB free Docker storage for image layers and the backing services. The first start requires internet access to download the public images.
+Install and start Docker Desktop on macOS or Windows, or a rootful Docker Engine with Compose v2 on Linux. On Windows, use the WSL2 backend and run the scripts in a Linux distribution. The image is amd64 and Apple Silicon uses emulation. Docker needs sufficient storage and memory. The tested Docker VM had approximately 8 GiB RAM. Allow at least 20 GB free Docker storage for image layers and the backing services. The first start requires internet access to download the public images.
 
 From the repository root:
 
@@ -17,7 +22,11 @@ cd dev/judge0
 ./start.sh
 ```
 
-The script downloads the pinned image if missing, verifies its registry manifest digest through Docker, and creates private `judge0.conf` with three independent random secrets if the file is absent. Existing configuration is preserved. PostgreSQL and Redis are pinned by digest. Readiness checks wait for the database, Redis and HTTP API.
+The script checks that the engine runs Linux containers with cgroup v2 and is not rootless.
+These checks do not prove all controller/mount permissions or sandbox behavior on a new host.
+It downloads the pinned image if missing, verifies its registry manifest digest through Docker,
+and creates private `judge0.conf` with three independent random secrets if the file is absent.
+Both `compose.yaml` and `compose.reports.yaml` are applied automatically. Existing configuration is preserved. PostgreSQL and Redis are pinned by digest. Readiness checks wait for the database, Redis and HTTP API.
 
 Open `http://127.0.0.1:2359/about` and `/languages`. HTTP availability alone does not verify sandbox execution. If Python 3 is installed on the host, run:
 
@@ -44,18 +53,21 @@ JUDGE0_PORT=2360 ./start.sh
 
 `JUDGE0_CONFIG_FILE` selects a different private configuration file, using the same value for start and stop. `COMPOSE_PROJECT_NAME` selects a different project. Run only one modern worker deployment per Docker host because the image uses a dedicated fixed cgroup subtree.
 
-## Local suite-report prototype
+<a id="local-suite-report-prototype"></a>
 
-Start the regular environment first so that the private configuration exists, then apply the
-opt-in overlay from this directory:
+## Local suite-report adapters
+
+`./start.sh` includes the overlay required by Java Run. After changing adapter files or
+mount definitions, wait for active work to finish, then recreate the server and workers.
+For the default private configuration, run from this directory:
 
 ```sh
-docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --wait
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --force-recreate --wait server workers
 ```
 
 After polling the submission to a terminal state, the runner can retrieve the suite report by
 token through the local Judge0 HTTP listener. Reports stay separate from stdout and stderr.
-Redis retains at most 32 report entries for up to five minutes. Use this prototype on the
+Redis retains at most 32 report entries for up to five minutes. Use these local adapters on the
 loopback-only listener. The submission token grants access to its report.
 
 The overlay also returns external compiler CPU/wall measurements and enforces the remaining
@@ -102,13 +114,13 @@ Do not replace an existing database password independently of its PostgreSQL vol
 | C++17 | `54` | GCC 9.2.0 with explicit `-std=c++17` |
 | Multi-file project | `89` | Trusted compile/run scripts |
 
-The C++ profile selects C++17 after caller options. The future runner must construct fixed trusted commands and must not accept arbitrary participant compiler flags.
+The C++ profile selects C++17 after caller options. Execution adapters must construct fixed trusted commands and must not accept arbitrary participant compiler flags.
 
 For multi-file Java, trusted scripts invoke `/usr/local/bin/java-with-budget.sh compiler ...` for the runner-owned compilation driver and `/usr/local/bin/java-with-budget.sh java ...` for runtime. The `javac` mode remains available for direct compiler calls. Multi-file C++ commands explicitly select `-std=c++17`. No Maven or pip downloads take place in submitted programs.
 
 The Isolate wrapper passes the effective memory budget to the Java launcher. The launcher reserves 48 MiB for runtime JVM overhead and 64 MiB for the compiler, then derives the maximum heap from the remaining budget. The runtime young generation is capped at 4 MiB to leave room for large arrays. The minimum heap is 8 MiB. A very small total request limit can still prevent JVM startup, and the aggregate cgroup memory limit remains authoritative.
 
-A compilation receives 10 CPU seconds, 20 wall seconds and 512000000 bytes. Execution retains its own request limits. Compiler cgroup accounting is reset before execution so compiler peaks and OOM events do not contaminate runtime measurements. These are per-engine-submission budgets. Aggregate budgets across multiple distinct runner compilation calls remain a runner responsibility.
+A compilation receives 10 CPU seconds, 20 wall seconds and 512000000 bytes. Execution retains its own request limits. Compiler cgroup accounting is reset before execution so compiler peaks and OOM events do not contaminate runtime measurements. The Java Run executor supplies the remaining aggregate compilation budget across distinct suite builds.
 
 ## Isolation and local extensions
 
@@ -137,6 +149,8 @@ Run source-level adapter checks from this directory:
 ruby tests/confirmed_oom_test.rb "$PWD/image/report-confirmed-oom.rb"
 ruby tests/bounded_workspace_test.rb "$PWD/image/bounded-workspace.rb"
 ruby tests/compilation_budget_test.rb "$PWD/image/compilation-budget.rb"
+ruby tests/suite_configuration_test.rb "$PWD/image/suite-report.rb"
+python3 tests/startup_test.py
 python3 tests/isolate_phase_test.py
 python3 tests/java_budget_test.py
 ```

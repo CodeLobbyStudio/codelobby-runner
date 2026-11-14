@@ -2,7 +2,7 @@
 
 Revision: **1.0.0-draft.2**, 2026-10-20. Proposal for runner Issue #5; not implemented or approved as a deployed API.
 
-Implementation status: the HTTP Run transport, authentication, request validation and error mapping are available locally; execution remains unavailable by default (503). Successful Run responses are exercised with test-only executors. Submit, polling, capabilities and real sandbox execution are not implemented. See README.md for current startup and transport behavior; the complete contract below remains the target specification.
+Implementation status: authenticated Java Run, request validation, bounded admission and real Judge0 execution are implemented. The local environment must include the bundled suite-report adapters. Submit, job polling, capabilities and C++/Python Run are not implemented. See README.md and docs/LOCAL_SETUP.md for startup and verification status. The complete contract below remains the target specification.
 
 Participant-visibility clarification, 2026-10-23: public test descriptions and results are visible; public test source is not. Wire fields, enum values and the draft version remain unchanged. Backend and runner owners must agree on this revised behavior before integration.
 

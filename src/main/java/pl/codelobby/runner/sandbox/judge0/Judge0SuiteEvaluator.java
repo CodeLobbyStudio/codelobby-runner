@@ -34,6 +34,10 @@ public final class Judge0SuiteEvaluator {
             throw new IllegalArgumentException("Suite execution is not finished");
         }
 
+        // Only the worker's compile-phase observation can certify this failure.
+        if (report != null && report.configurationError()) {
+            return results(suite, Verdict.EXECUTION_ERROR, List.of());
+        }
         Verdict status = engineVerdict(engine);
         if (status == Verdict.COMPILATION_ERROR || status == Verdict.EXECUTION_ERROR) {
             return results(suite, status, List.of());

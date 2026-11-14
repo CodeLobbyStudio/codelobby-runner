@@ -49,6 +49,7 @@ module CodeLobbySuiteReport
   def compile
     @codelobby_build_limits = nil
     @codelobby_build_usage = nil
+    @codelobby_configuration_error = false
     if submission.is_project
       header, result = Open3.capture2("/usr/bin/sudo", "-n", "/usr/local/ruby-2.7.0/bin/ruby",
                                      "/usr/local/bin/read-suite-report.rb", Integer(box_id).to_s, "compile-budget")
@@ -67,6 +68,12 @@ module CodeLobbySuiteReport
       wall = Float(metadata[:"time-wall"]) * 1000
       if cpu.finite? && wall.finite? && cpu >= 0 && wall >= 0
         @codelobby_build_usage = {cpuTimeMs: cpu, wallTimeMs: wall}
+        # Capture only before runtime. Participant execution cannot forge this observation.
+        _, marker = Open3.capture2("/usr/bin/sudo", "-n", "/usr/local/ruby-2.7.0/bin/ruby",
+                                  "/usr/local/bin/read-suite-report.rb", Integer(box_id).to_s,
+                                  "configuration-error")
+        raise "Configuration check unavailable" unless [0, 2].include?(marker.exitstatus)
+        @codelobby_configuration_error = marker.success?
         # Compile failures become terminal before compile returns. Publish usage before that save.
         store_suite_report(state: "MISSING")
       end
@@ -91,6 +98,7 @@ module CodeLobbySuiteReport
 
   def store_suite_report(value)
     return unless submission.is_project && TOKEN.match?(submission.token)
+    value[:configurationError] = @codelobby_configuration_error == true
     value[:compilation] = @codelobby_build_usage if @codelobby_build_usage
     CodeLobbySuiteReport.redis.eval(STORE, keys: [INDEX, KEY_PREFIX + submission.token],
                                    argv: [Time.now.to_f, JSON.generate(value)])

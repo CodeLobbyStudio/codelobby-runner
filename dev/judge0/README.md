@@ -61,6 +61,10 @@ loopback-only listener. The submission token grants access to its report.
 The overlay also returns external compiler CPU/wall measurements and enforces the remaining
 per-target compilation budget supplied by the runner. Each project carries a trusted budget
 header in its generated compile script.
+The worker also captures a fixed host-configuration failure marker during compilation,
+before any participant runtime starts. Runtime code cannot change that captured outcome.
+The overlay mounts the matching Java launcher so the runner-owned compiler driver receives
+the compiler memory allowance. Recreate workers after pulling changes to this overlay.
 
 The internal JavaRunExecutor composes suite planning, archive creation, engine communication,
 report evaluation and request-level result aggregation. Evaluation and compilation share
@@ -100,7 +104,7 @@ Do not replace an existing database password independently of its PostgreSQL vol
 
 The C++ profile selects C++17 after caller options. The future runner must construct fixed trusted commands and must not accept arbitrary participant compiler flags.
 
-For multi-file Java, trusted scripts invoke `/usr/local/bin/java-with-budget.sh javac ...` and `/usr/local/bin/java-with-budget.sh java ...`. Multi-file C++ commands explicitly select `-std=c++17`. No Maven or pip downloads take place in submitted programs.
+For multi-file Java, trusted scripts invoke `/usr/local/bin/java-with-budget.sh compiler ...` for the runner-owned compilation driver and `/usr/local/bin/java-with-budget.sh java ...` for runtime. The `javac` mode remains available for direct compiler calls. Multi-file C++ commands explicitly select `-std=c++17`. No Maven or pip downloads take place in submitted programs.
 
 The Isolate wrapper passes the effective memory budget to the Java launcher. The launcher reserves 48 MiB for runtime JVM overhead and 64 MiB for the compiler, then derives the maximum heap from the remaining budget. The runtime young generation is capped at 4 MiB to leave room for large arrays. The minimum heap is 8 MiB. A very small total request limit can still prevent JVM startup, and the aggregate cgroup memory limit remains authoritative.
 

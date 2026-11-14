@@ -9,3 +9,4 @@ services:
       - ./image/read-suite-report.rb:/usr/local/bin/read-suite-report.rb:ro
       - ./image/compilation-budget.rb:/api/config/initializers/zz_codelobby_compilation_budget.rb:ro
       - ./image/isolate-with-workspace.sh:/opt/codelobby-bin/isolate:ro
+      - ./image/java-with-budget.sh:/usr/local/bin/java-with-budget.sh:ro

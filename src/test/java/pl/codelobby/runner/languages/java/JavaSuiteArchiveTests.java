@@ -35,13 +35,16 @@ class JavaSuiteArchiveTests {
         assertThat(archive.create(plan)).isEqualTo(zip);
         assertThat(entries.keySet()).containsExactly(
                 "sources/src/Solution.java", "sources/-helpers/Helper.java", "sources/tests/Public.java",
-                "compile", "run");
+                ".codelobby/CompileSuite.java", "compile", "run");
         assertThat(entries).containsEntry("sources/src/Solution.java", "// żółć")
                 .containsEntry("sources/-helpers/Helper.java", "// helper")
                 .containsEntry("sources/tests/Public.java", "// host test");
         assertThat(entries.get("compile")).contains(
                 "'sources/src/Solution.java'", "'sources/-helpers/Helper.java'", "'sources/tests/Public.java'",
-                "/usr/local/bin/java-with-budget.sh javac --release 21", "-proc:none", "\"${sources[@]}\"");
+                "/usr/local/bin/java-with-budget.sh compiler .codelobby/CompileSuite.java",
+                "'tests.Public$Nested' 1 \"${sources[@]}\"");
+        assertThat(entries.get(".codelobby/CompileSuite.java")).contains("-proc:none",
+                "Class.forName(mainClass, false", "INVALID_HOST_TEST_CONFIGURATION");
         assertThat(entries.get("run")).contains(
                 "CODELOBBY_REPORT_PATH=\"$PWD/.codelobby/report.ndjson\"",
                 ": > \"$CODELOBBY_REPORT_PATH\"",

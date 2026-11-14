@@ -187,6 +187,15 @@ class Judge0SuiteEvaluatorTests {
     }
 
     @Test
+    void reportsVerifiedHostConfigurationFailuresWithoutBlamingTheParticipant() {
+        var result = evaluator.evaluate(suite(TestVisibility.PUBLIC),
+                engine(Judge0Status.COMPILATION_ERROR, null, null),
+                new Judge0SuiteReport(Judge0SuiteReport.State.MISSING, null, null, true));
+        assertThat(result.status()).isEqualTo(Verdict.EXECUTION_ERROR);
+        assertThat(result.testResults()).extracting(TestResult::status).containsOnly(TestVerdict.NOT_RUN);
+    }
+
+    @Test
     void marksAllCasesNotRunWhenCompilationFails() {
         var result = evaluator.evaluate(suite(TestVisibility.PUBLIC),
                 engine(Judge0Status.COMPILATION_ERROR, null, null), null);

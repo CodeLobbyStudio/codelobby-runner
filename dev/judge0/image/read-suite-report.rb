@@ -3,7 +3,7 @@ id = ARGV.fetch(0)
 exit 1 unless /\A(?:0|[1-9][0-9]{0,2})\z/.match?(id)
 
 mode = ARGV.fetch(1, "report")
-exit 1 unless ["report", "compile-budget"].include?(mode)
+exit 1 unless ["report", "compile-budget", "configuration-error"].include?(mode)
 limit = 1_000_000
 flags = File::RDONLY | File::NOFOLLOW | File::NONBLOCK
 begin
@@ -26,6 +26,14 @@ begin
     end
     File.open("/proc/self/fd/#{box.fileno}/.codelobby", flags) do |directory|
       exit 2 unless directory.stat.directory?
+      if mode == "configuration-error"
+        path = "/proc/self/fd/#{directory.fileno}/configuration-error"
+        exit 2 unless File.lstat(path).file?
+        File.open(path, flags) do |marker|
+          exit 2 unless marker.stat.file? && marker.stat.nlink == 1
+          exit(marker.read(32) == "INVALID_HOST_TEST_CONFIGURATION" ? 0 : 2)
+        end
+      end
       path = "/proc/self/fd/#{directory.fileno}/report.ndjson"
       exit 2 unless File.lstat(path).file?
       File.open(path, flags) do |report|

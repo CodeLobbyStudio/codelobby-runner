@@ -5,7 +5,7 @@ mode=${1:-}
 shift || exit 2
 case "$mode" in
   java) reserve_mib=48; metaspace_mib=32 ;;
-  javac) reserve_mib=64; metaspace_mib=64 ;;
+  javac|compiler) reserve_mib=64; metaspace_mib=64 ;;
   *) echo 'Unsupported Java launcher mode' >&2; exit 2 ;;
 esac
 limit=${CODELOBBY_MEMORY_LIMIT_KIB:-}

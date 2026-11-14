@@ -3,10 +3,15 @@ package pl.codelobby.runner.sandbox.judge0;
 import java.util.Objects;
 
 /** Raw, untrusted suite report, separate from sandbox stdout and stderr. */
-public record Judge0SuiteReport(State state, byte[] content, Judge0CompilationUsage compilation) {
+public record Judge0SuiteReport(
+        State state, byte[] content, Judge0CompilationUsage compilation, boolean configurationError) {
 
     public Judge0SuiteReport(State state, byte[] content) {
-        this(state, content, null);
+        this(state, content, null, false);
+    }
+
+    public Judge0SuiteReport(State state, byte[] content, Judge0CompilationUsage compilation) {
+        this(state, content, compilation, false);
     }
 
     static final int MAX_BYTES = 1_000_000;
@@ -20,6 +25,9 @@ public record Judge0SuiteReport(State state, byte[] content, Judge0CompilationUs
         if (state == State.AVAILABLE ? content == null || content.length == 0 || content.length > MAX_BYTES
                 : content != null) {
             throw new IllegalArgumentException("Invalid suite report content");
+        }
+        if (configurationError && state != State.MISSING) {
+            throw new IllegalArgumentException("Configuration failures cannot contain an execution report");
         }
         content = content == null ? null : content.clone();
     }

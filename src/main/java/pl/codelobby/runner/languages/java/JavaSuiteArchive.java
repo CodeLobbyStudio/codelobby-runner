@@ -24,8 +24,8 @@ public final class JavaSuiteArchive {
             mkdir -p .codelobby/classes
             sources=(
             %s)
-            exec /usr/local/bin/java-with-budget.sh javac --release 21 -encoding UTF-8 -proc:none \\
-                -classpath .codelobby/classes -d .codelobby/classes "${sources[@]}"
+            exec /usr/local/bin/java-with-budget.sh compiler .codelobby/CompileSuite.java \\
+                '%s' %d "${sources[@]}"
             """;
     private static final String RUN = """
             #!/bin/bash
@@ -50,6 +50,8 @@ public final class JavaSuiteArchive {
 
         var bytes = new ByteArrayOutputStream();
         var sources = new StringBuilder();
+        var hostSources = new StringBuilder();
+        int hostCount = 0;
         try (var zip = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
             for (var file : plan.files()) {
                 if (!SOURCE_PATH.matcher(file.path()).matches() || file.type() == FileType.HIDDEN_TEST) {
@@ -57,15 +59,34 @@ public final class JavaSuiteArchive {
                 }
                 String entry = "sources/" + file.path();
                 writeEntry(zip, entry, file.content());
-                sources.append("    '").append(entry).append("'\n");
+                if (file.type() == FileType.VISIBLE_TEST) {
+                    hostSources.append("    '").append(entry).append("'\n");
+                    hostCount++;
+                } else {
+                    sources.append("    '").append(entry).append("'\n");
+                }
             }
-            writeEntry(zip, "compile", COMPILE.formatted(compilationCpuMs, compilationWallMs, sources));
+            if (hostCount == 0) {
+                throw new IllegalArgumentException("Java suite requires host test sources");
+            }
+            writeEntry(zip, ".codelobby/CompileSuite.java", compilerDriver());
+            writeEntry(zip, "compile", COMPILE.formatted(compilationCpuMs, compilationWallMs,
+                    hostSources.toString() + sources, plan.mainClass(), hostCount));
             writeEntry(zip, "run", RUN.formatted(plan.mainClass()));
         } catch (IOException exception) {
             // ZIP errors can include entry names. Keep them out of runner diagnostics.
             throw new IllegalStateException("Could not build Java suite archive");
         }
         return bytes.toByteArray();
+    }
+
+    private static String compilerDriver() throws IOException {
+        try (var resource = JavaSuiteArchive.class.getResourceAsStream("CompileSuite.java")) {
+            if (resource == null) {
+                throw new IllegalStateException("Java compiler driver is unavailable");
+            }
+            return new String(resource.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     private static void writeEntry(ZipOutputStream zip, String name, String content) throws IOException {

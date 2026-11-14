@@ -279,6 +279,9 @@ exposed, and health details are hidden.
 
 ### Internal Run endpoint
 
+See [Java Run result evaluation](docs/TEST_RESULT_EVALUATION.md) for comparison ownership,
+Host configuration checks and failure attribution.
+
 See [internal API authentication and validation](docs/INTERNAL_API_VALIDATION.md)
 for the implemented checks, limits, signature-validation scope and regression tests.
 

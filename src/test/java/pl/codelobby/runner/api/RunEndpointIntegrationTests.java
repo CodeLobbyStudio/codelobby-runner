@@ -41,6 +41,7 @@ class RunEndpointIntegrationTests {
             "ACCEPTED, ACCEPTED, 1",
             "WRONG_ANSWER, WRONG_ANSWER, 0",
             "COMPILATION_ERROR, NOT_RUN, 0",
+            "EXECUTION_ERROR, NOT_RUN, 0",
             "TIME_LIMIT_EXCEEDED, NOT_RUN, 0"
     })
     void evaluatesJavaThroughTheAuthenticatedHttpEndpoint(
@@ -48,7 +49,7 @@ class RunEndpointIntegrationTests {
         var mapper = JsonMapper.builder().build();
         var body = mapper.readTree(Path.of("docs/api/examples/run-request.json").toFile()).asObject();
         String source = switch (verdict) {
-            case ACCEPTED -> body.get("submissionFiles").get(0).get("content").asString();
+            case ACCEPTED, EXECUTION_ERROR -> body.get("submissionFiles").get(0).get("content").asString();
             case WRONG_ANSWER ->
                     "public class Solution { public static int countVowels(String text) { return 0; } }";
             case COMPILATION_ERROR -> "public class Solution { broken }";
@@ -57,6 +58,13 @@ class RunEndpointIntegrationTests {
             default -> throw new AssertionError("Unexpected test verdict");
         };
         body.get("submissionFiles").get(0).asObject().put("content", source);
+        if (verdict == Verdict.EXECUTION_ERROR) {
+            for (var file : body.get("taskFiles")) {
+                if (file.get("type").asString().equals("VISIBLE_TEST")) {
+                    file.asObject().put("content", "public class PublicTests { broken host syntax }");
+                }
+            }
+        }
         var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/internal/v1/runs"))
                 .timeout(Duration.ofSeconds(70))
                 .header("Content-Type", "application/json")

@@ -36,6 +36,14 @@ class JavaBudgetTests(unittest.TestCase):
         self.assertEqual(r.returncode,0,r.stderr)
         self.assertIn('-J-Xmx424m',json.loads(r.stdout)['args'])
 
+    def test_compiler_driver_uses_compiler_memory_without_javac_prefix(self):
+        r=self.invoke('compiler','500000')
+        self.assertEqual(r.returncode,0,r.stderr)
+        args=json.loads(r.stdout)['args']
+        self.assertIn('-Xmx424m',args)
+        self.assertIn('-XX:MaxMetaspaceSize=64m',args)
+        self.assertNotIn('-XX:MaxNewSize=4m',args)
+
     def test_small_budget_does_not_use_a_large_minimum_heap(self):
         self.assertIn('-Xmx8m',json.loads(self.invoke('java','16000').stdout)['args'])
 

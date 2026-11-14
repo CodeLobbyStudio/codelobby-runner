@@ -152,6 +152,24 @@ class HttpJudge0ClientTests {
     }
 
     @Test
+    void readsTheWorkerConfigurationOutcome() {
+        response = exchange -> reply(exchange, 200, "application/json",
+                "{\"state\":\"MISSING\",\"configurationError\":true}");
+        assertThat(client(Duration.ofSeconds(2)).getSuiteReport(new Judge0SubmissionToken(TOKEN))
+                .configurationError()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "1", "\"true\"", "{}"})
+    void rejectsNonBooleanConfigurationOutcomes(String value) {
+        response = exchange -> reply(exchange, 200, "application/json",
+                "{\"state\":\"MISSING\",\"configurationError\":" + value + "}");
+        assertThatThrownBy(() -> client(Duration.ofSeconds(2)).getSuiteReport(new Judge0SubmissionToken(TOKEN)))
+                .isInstanceOfSatisfying(Judge0ClientException.class,
+                        exception -> assertThat(exception.reason()).isEqualTo(Reason.INVALID_RESPONSE));
+    }
+
+    @Test
     void boundsTheProjectPostByTheRemainingOperationDeadlineWithoutRetry() {
         response = exchange -> {
             try {

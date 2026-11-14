@@ -134,6 +134,11 @@ public final class HttpJudge0Client implements Judge0Client {
                 throw new IllegalArgumentException("Missing suite report state");
             }
             var state = Judge0SuiteReport.State.valueOf(stateNode.asString());
+            var configuration = root.get("configurationError");
+            if (configuration != null && !configuration.isBoolean()) {
+                throw new IllegalArgumentException("Invalid configuration outcome");
+            }
+            boolean configurationError = configuration != null && configuration.asBoolean();
             var build = root.get("compilation");
             Judge0CompilationUsage compilation = null;
             if (build != null && !build.isNull()) {
@@ -148,13 +153,14 @@ public final class HttpJudge0Client implements Judge0Client {
                 if (root.has("report")) {
                     throw new IllegalArgumentException("Unexpected suite report");
                 }
-                return new Judge0SuiteReport(state, null, compilation);
+                return new Judge0SuiteReport(state, null, compilation, configurationError);
             }
             var report = root.get("report");
             if (report == null || !report.isString() || report.asString().length() > maxEncodedBytes) {
                 throw new IllegalArgumentException("Invalid suite report");
             }
-            return new Judge0SuiteReport(state, Base64.getDecoder().decode(report.asString()), compilation);
+            return new Judge0SuiteReport(state, Base64.getDecoder().decode(report.asString()),
+                    compilation, configurationError);
         } catch (IllegalArgumentException exception) {
             throw new Judge0ClientException(Reason.INVALID_RESPONSE, token);
         }

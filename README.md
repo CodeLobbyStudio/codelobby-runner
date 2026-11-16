@@ -53,17 +53,20 @@ for merge is a separate repository setting.
 
 The optional [Judge0 development environment](dev/judge0/README.md) downloads a
 prebuilt image with Java 21, Python 3.12 and C++17 from the maintainer's personal
-container registry. Start it with `dev/judge0/start.sh` after starting Docker
-Desktop. It uses localhost port 2359 and is separate from the runner application.
-The runner's Judge0 client is not implemented by this infrastructure setup.
+container registry. Start it with `./dev/judge0/start.sh` after starting Docker.
+The script includes the adapters required by Java Run. Judge0 uses localhost port
+2359 and is separate from the runner application on port 8081.
+Follow the [local setup guide](docs/LOCAL_SETUP.md) for macOS, Linux or Windows with WSL2.
+The guide distinguishes configured environments from those actually verified.
 
 ## Current scope
 
 The service provides HTTP health and `POST /internal/v1/runs`, strict request
-parsing, validation and safe error responses. It does not compile or execute
-participant code. A valid authenticated Run returns `503 EXECUTION_UNAVAILABLE`
-until a verified executor is supplied. Simulated successful execution exists only
-in tests. Submit, job polling and capabilities endpoints are not implemented.
+parsing, validation and safe error responses. Authenticated Java Run compiles and
+executes all supplied public test suites through the local Judge0 environment.
+It returns evaluated results and enforces queue, compilation and runtime limits.
+Judge0 must be started with the bundled adapters. Submit, job polling, capabilities
+and C++/Python Run are not implemented.
 The full execution API contract is tracked in issue #5.
 
 ## Proposed internal API contract
@@ -87,7 +90,8 @@ backend/runner flow. Backend stores public descriptions and joins results by
 
 The project uses Spring Boot 4.1.1 and Maven Wrapper with Maven 3.9.11.
 A separate Maven installation is not required. Docker, Judge0, a database and the
-backend are not required to build, test or start this bootstrap.
+backend are not required to build, run the standard tests or start the runner.
+Judge0 and its backing services are required to execute real submissions.
 
 ## Local development
 
@@ -148,9 +152,9 @@ the real HTTP health endpoint without external services.
 | `JUDGE0_URL` | `http://127.0.0.1:2359` | Judge0 HTTP(S) origin, without credentials, path, query or fragment |
 | `JUDGE0_JAVA_LANGUAGE_ID` | `1001` | Java 21 ID in the published development image, not a universal Judge0 ID |
 | `JUDGE0_CONNECT_TIMEOUT` | `2s` | Maximum time to establish a new HTTP connection |
-| `JUDGE0_REQUEST_TIMEOUT` | `10s` | Planned limit for one HTTP request |
-| `JUDGE0_POLL_INTERVAL` | `500ms` | Planned interval between result queries |
-| `JUDGE0_RESULT_TIMEOUT` | `60s` | Planned overall wait for a submission result |
+| `JUDGE0_REQUEST_TIMEOUT` | `10s` | Limit for one HTTP request |
+| `JUDGE0_POLL_INTERVAL` | `500ms` | Interval between result queries |
+| `JUDGE0_RESULT_TIMEOUT` | `60s` | Overall wait for one engine submission result |
 
 Judge0 settings are bound to `Judge0Properties` and validated at startup. Durations
 must be at least `1ms`, with connect timeout no greater than request timeout,
@@ -211,9 +215,9 @@ before any participant-facing response. Result `toString()` hides diagnostics.
 
 Communication timeouts are separate from participant CPU/wall-time budgets and
 do not implement the complete Run/Submit deadline, queueing or resource cleanup.
-The client is not connected to the Run executor, which still returns execution
-unavailable. Client HTTP tests use an in-process server and require neither Docker
-nor Judge0. Verification against the real sandbox is opt-in as described below.
+The Java Run executor uses this client and applies the request-wide deadline and
+shared capacity separately. Client HTTP tests use an in-process server and require
+neither Docker nor Judge0. Verification against the real sandbox is opt-in as described below.
 
 ### Judge0 client integration checks
 
@@ -224,8 +228,8 @@ With JDK 21 selected, start Docker Desktop and run from the repository root:
 ./mvnw -B -ntp -Pjudge0-integration verify
 ```
 
-On Windows, start the environment using the Compose instructions in
-[dev/judge0/README.md](dev/judge0/README.md), then run:
+On Windows, prefer the complete WSL2 path in [the local setup guide](docs/LOCAL_SETUP.md).
+If testing the runner natively in PowerShell against an already running Judge0, use:
 
 ```powershell
 .\mvnw.cmd -B -ntp -Pjudge0-integration verify
@@ -285,21 +289,19 @@ Host configuration checks and failure attribution.
 See [internal API authentication and validation](docs/INTERNAL_API_VALIDATION.md)
 for the implemented checks, limits, signature-validation scope and regression tests.
 
-Start Judge0 with the suite-report overlay before using the Java Run endpoint:
+Start Judge0 from the repository root. The required suite-report overlay is included:
 
 ~~~sh
-cd dev/judge0
-./start.sh
-docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --wait
-cd ../..
+./dev/judge0/start.sh
 ~~~
 
 The overlay reads the local adapters in dev/judge0/image. After updating those files,
-wait for active work to finish, then reload the server and workers:
+wait for active work to finish, then recreate the server and workers. A plain
+`restart` does not apply new bind mounts and may retain previously mounted files:
 
 ~~~sh
 cd dev/judge0
-docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml restart server workers
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml up -d --force-recreate --wait server workers
 cd ../..
 ~~~
 

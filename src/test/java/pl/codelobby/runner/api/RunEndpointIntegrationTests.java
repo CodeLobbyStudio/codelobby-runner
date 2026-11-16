@@ -6,15 +6,26 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import pl.codelobby.runner.model.FileType;
+import pl.codelobby.runner.model.JavaExecution;
+import pl.codelobby.runner.model.RunRequest;
 import pl.codelobby.runner.model.RunResponse;
+import pl.codelobby.runner.model.SubmissionFile;
+import pl.codelobby.runner.model.TaskFile;
+import pl.codelobby.runner.model.TestCaseDefinition;
+import pl.codelobby.runner.model.TestResult;
+import pl.codelobby.runner.model.TestSuite;
+import pl.codelobby.runner.model.TestVisibility;
 import pl.codelobby.runner.model.TestVerdict;
 import pl.codelobby.runner.model.Verdict;
 import tools.jackson.databind.json.JsonMapper;
@@ -88,4 +99,89 @@ class RunEndpointIntegrationTests {
                     "Files.writeString", "tests/PublicTests.java");
         }
     }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void returnsEveryPublicCaseAndItsFeedbackAcrossIndependentSuites(boolean oneWrongAnswer) throws Exception {
+        var mapper = JsonMapper.builder().build();
+        var original = mapper.readValue(Path.of("docs/api/examples/run-request.json").toFile(), RunRequest.class);
+        String solution = "public class Solution { public static int countVowels(String text) { "
+                + (oneWrongAnswer ? "if (text.equals(\"ae\")) return 1; " : "")
+                + "return Helpers.count(text); } }";
+        var input = new RunRequest("multi-suite-http", original.taskVersionId(), original.language(), List.of(
+                original.taskFiles().get(0), original.taskFiles().get(1),
+                new TaskFile("tests/FirstPublicTests.java", FileType.VISIBLE_TEST,
+                        publicSource("FirstPublicTests", "\"first\",\"second\"", "\"codelobby\",\"rhythm\"", "3,0")),
+                new TaskFile("tests/SecondPublicTests.java", FileType.VISIBLE_TEST,
+                        publicSource("SecondPublicTests", "\"third\"", "\"ae\"", "2"))),
+                List.of(new SubmissionFile("src/Solution.java", solution)), List.of(
+                new TestSuite("suite-one", TestVisibility.PUBLIC, List.of("tests/FirstPublicTests.java"),
+                        new JavaExecution("FirstPublicTests"),
+                        List.of(new TestCaseDefinition("first"), new TestCaseDefinition("second"))),
+                new TestSuite("suite-two", TestVisibility.PUBLIC, List.of("tests/SecondPublicTests.java"),
+                        new JavaExecution("SecondPublicTests"), List.of(new TestCaseDefinition("third")))),
+                original.limits());
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/internal/v1/runs"))
+                .timeout(Duration.ofSeconds(70)).header("Content-Type", "application/json")
+                .header("X-CodeLobby-Internal-Key", "synthetic-http-integration-key-123456789")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(input))).build();
+
+        try (var http = HttpClient.newHttpClient()) {
+            var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            var envelope = mapper.readValue(response.body(), RunResponse.class);
+            var result = envelope.result();
+            assertThat(envelope.requestId()).isEqualTo(input.requestId());
+            assertThat(envelope.taskVersionId()).isEqualTo(input.taskVersionId());
+            assertThat(result.status()).isEqualTo(oneWrongAnswer ? Verdict.WRONG_ANSWER : Verdict.ACCEPTED);
+            assertThat(result.totalTests()).isEqualTo(3);
+            assertThat(result.passedTests()).isEqualTo(oneWrongAnswer ? 2 : 3);
+            assertThat(result.testResults()).extracting(TestResult::testId).containsExactly("first", "second", "third");
+            assertThat(result.testResults()).extracting(TestResult::suiteId)
+                    .containsExactly("suite-one", "suite-one", "suite-two");
+            assertThat(result.testResults()).extracting(TestResult::status).containsExactly(
+                    TestVerdict.ACCEPTED, TestVerdict.ACCEPTED,
+                    oneWrongAnswer ? TestVerdict.WRONG_ANSWER : TestVerdict.ACCEPTED);
+            assertThat(result.testResults()).extracting(test -> test.input().get("text").asString())
+                    .containsExactly("codelobby", "rhythm", "ae");
+            assertThat(result.testResults()).extracting(test -> test.expectedOutput().asInt())
+                    .containsExactly(3, 0, 2);
+            assertThat(result.testResults()).extracting(test -> test.actualOutput().asInt())
+                    .containsExactly(3, 0, oneWrongAnswer ? 1 : 2);
+            assertThat(result.testResults()).allSatisfy(test -> {
+                assertThat(test.visibility()).isEqualTo(TestVisibility.PUBLIC);
+                assertThat(test.stdout()).isNull();
+                assertThat(test.stderr()).isNull();
+            });
+            assertThat(result.compileOutput()).isNull();
+            assertThat(response.body()).doesNotContain("host-source-sentinel", "FirstPublicTests.java",
+                    "SecondPublicTests.java", "public class", "Files.writeString");
+        }
+    }
+
+    private static String publicSource(String className, String ids, String inputs, String expected) {
+        return """
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.nio.file.StandardOpenOption;
+                public class %s {
+                    public static void main(String[] args) throws Exception {
+                        String[] ids = {%s};
+                        String[] inputs = {%s};
+                        int[] expected = {%s};
+                        for (int i = 0; i < ids.length; i++) {
+                            int actual = Solution.countVowels(inputs[i]);
+                            String status = actual == expected[i] ? "ACCEPTED" : "WRONG_ANSWER";
+                            String record = "{\\\"testId\\\":\\\"" + ids[i] + "\\\",\\\"status\\\":\\\"" + status
+                                + "\\\",\\\"input\\\":{\\\"text\\\":\\\"" + inputs[i] + "\\\"},\\\"expectedOutput\\\":"
+                                + expected[i] + ",\\\"actualOutput\\\":" + actual + "}\\n";
+                            Files.writeString(Path.of(System.getenv("CODELOBBY_REPORT_PATH")), record,
+                                    StandardOpenOption.APPEND);
+                        }
+                        System.out.println("host-source-sentinel");
+                    }
+                }
+                """.formatted(className, ids, inputs, expected);
+    }
+
 }

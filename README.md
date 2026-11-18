@@ -330,6 +330,12 @@ task-version IDs, the solution verdict, the number of passed tests and ordered
 public test results. Negative solution verdicts such as WRONG_ANSWER,
 COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 
+The application provides one shared `ExecutionQueue` in `core`. Java Run uses it
+for admission, waiting and failure quarantine. Future execution operations must use
+the same instance rather than create independent queues. This is synchronous
+in-memory coordination, not an asynchronous job store. Limits are unchanged and
+are not yet configurable through deployment properties.
+
 One Run executes at a time and up to ten wait in FIFO order. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full
 queue returns 429 QUEUE_CAPACITY_EXCEEDED. Engine unavailability returns

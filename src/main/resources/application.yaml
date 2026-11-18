@@ -4,6 +4,8 @@ spring:
 
 runner:
   internal-key: ${CODELOBBY_INTERNAL_KEY:}
+  execution:
+    max-pending: ${RUNNER_EXECUTION_MAX_PENDING:10}
   judge0:
     base-url: ${JUDGE0_URL:http://127.0.0.1:2359}
     java-language-id: ${JUDGE0_JAVA_LANGUAGE_ID:1001}

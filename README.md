@@ -333,15 +333,32 @@ COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 The application provides one shared `ExecutionQueue` in `core`. Java Run uses it
 for admission, waiting and failure quarantine. Future execution operations must use
 the same instance rather than create independent queues. This is synchronous
-in-memory coordination, not an asynchronous job store. Limits are unchanged and
-are not yet configurable through deployment properties.
+in-memory coordination, not an asynchronous job store.
 
-One Run executes at a time and up to ten wait in FIFO order. The 60-second deadline
+One Run executes at a time and, by default, up to ten wait in FIFO order. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full
 queue returns 429 QUEUE_CAPACITY_EXCEEDED. Engine unavailability returns
 503 EXECUTION_UNAVAILABLE. An operation or engine communication timeout returns
 504 REQUEST_DEADLINE_EXCEEDED. Capacity errors and unavailability carry
 the Retry-After header with a value of 1.
+
+The waiting limit is deployment configuration, not a participant request field:
+
+| Property | Environment variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `runner.execution.max-pending` | `RUNNER_EXECUTION_MAX_PENDING` | `10` | Maximum number of waiting operations, excluding the one active execution |
+
+For example, set `RUNNER_EXECUTION_MAX_PENDING=20` in the runner process environment
+before starting it. Restart the runner to apply a change. Setting `0` disables
+waiting, so a request arriving during active execution is rejected immediately.
+The limit must be a whole number from `0` to `2147483646`. Negative, nonnumeric,
+out-of-range and unknown `runner.execution` settings prevent startup.
+
+This range prevents invalid semaphore capacity and is not a verified deployment
+sizing recommendation. A larger queue does not increase throughput or the number
+of active executions. Waiting still counts towards the 60-second Run deadline.
+Choose capacity using measured execution times and available resources. There is
+no deployment setting to increase active execution in this stage.
 
 An unconfirmed execution or cleanup failure quarantines the pipeline. Further Runs
 receive 503. To recover locally, stop or restart the Judge0 workers and verify

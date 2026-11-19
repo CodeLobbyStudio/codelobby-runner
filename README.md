@@ -330,12 +330,35 @@ task-version IDs, the solution verdict, the number of passed tests and ordered
 public test results. Negative solution verdicts such as WRONG_ANSWER,
 COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 
-One Run executes at a time and up to ten wait in FIFO order. The 60-second deadline
+The application provides one shared `ExecutionQueue` in `core`. Java Run uses it
+for admission, waiting and failure quarantine. Future execution operations must use
+the same instance rather than create independent queues. This is synchronous
+in-memory coordination, not an asynchronous job store.
+
+By default, two Runs execute at a time and up to ten wait in FIFO order with the pinned Judge0 1.1.0 image. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full
 queue returns 429 QUEUE_CAPACITY_EXCEEDED. Engine unavailability returns
 503 EXECUTION_UNAVAILABLE. An operation or engine communication timeout returns
 504 REQUEST_DEADLINE_EXCEEDED. Capacity errors and unavailability carry
 the Retry-After header with a value of 1.
+
+Active and waiting limits are deployment configuration, not participant request fields:
+
+| Property | Environment variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `runner.execution.max-active` | `RUNNER_EXECUTION_MAX_ACTIVE` | `2` | Active operations, currently `1` or `2` |
+| `runner.execution.max-pending` | `RUNNER_EXECUTION_MAX_PENDING` | `10` | Maximum number of waiting operations, excluding active executions |
+
+For example, set `RUNNER_EXECUTION_MAX_PENDING=20` in the runner process environment
+before starting it. Restart the runner to apply a change. Setting `0` disables
+waiting, so a request arriving when all active slots are occupied is rejected immediately.
+The pending limit must be nonnegative, and active plus pending capacity must not exceed `2147483647`. Negative, nonnumeric,
+out-of-range and unknown `runner.execution` settings prevent startup.
+
+This range prevents invalid semaphore capacity and is not a verified deployment
+sizing recommendation. A larger queue does not increase throughput or the number
+of active executions. Waiting still counts towards the 60-second Run deadline.
+Choose capacity using measured execution times and available resources. Judge0 image 1.1.0 supports two processes in one worker container. Fresh configuration defaults to `COUNT=2` and `RUNNER_EXECUTION_MAX_ACTIVE=2`. Existing private `judge0.conf` files are preserved, so update their `COUNT` setting to `2` before using the default two-slot runner. For serial operation, explicitly set both limits to `1`. A communication failure still quarantines new work globally, while operations already active are allowed to finish. Do not start multiple worker containers or multiple runner instances with this local-only queue. The supported active limit is currently `1` or `2`.
 
 An unconfirmed execution or cleanup failure quarantines the pipeline. Further Runs
 receive 503. To recover locally, stop or restart the Judge0 workers and verify

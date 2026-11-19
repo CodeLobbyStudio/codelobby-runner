@@ -17,13 +17,16 @@ COPY --from=toolchains /usr/local/codelobby /usr/local/codelobby
 COPY image/modern-languages.rb /api/db/languages/codelobby_modern.rb
 COPY image/report-confirmed-oom.rb /api/config/initializers/codelobby_confirmed_oom.rb
 COPY image/bounded-workspace.rb /api/config/initializers/codelobby_bounded_workspace.rb
+COPY image/sandbox-slots.rb /usr/local/lib/codelobby/sandbox-slots.rb
+COPY image/worker-recovery.rb /usr/local/lib/codelobby/worker-recovery.rb
+COPY image/worker-recovery-initializer.rb /api/config/initializers/zzzz_codelobby_worker_recovery.rb
 COPY image/compilation-budget.rb /api/config/initializers/zz_codelobby_compilation_budget.rb
-COPY image/start-without-env-log.sh image/workspace-helper.sh image/reset-compile-cgroup.sh image/java-with-budget.sh /usr/local/bin/
+COPY image/start-without-env-log.sh image/initialize-worker-state.sh image/workspace-helper.sh image/reset-compile-cgroup.sh image/java-with-budget.sh /usr/local/bin/
 COPY image/isolate-with-workspace.sh /opt/codelobby-bin/isolate
 RUN printf '\nrequire_relative "codelobby_modern"\n' >> /api/db/languages/active.rb && \
-    chmod 0755 /usr/local/bin/start-without-env-log.sh /usr/local/bin/workspace-helper.sh \
+    chmod 0755 /usr/local/bin/initialize-worker-state.sh /usr/local/bin/start-without-env-log.sh /usr/local/bin/workspace-helper.sh \
         /usr/local/bin/reset-compile-cgroup.sh /usr/local/bin/java-with-budget.sh /opt/codelobby-bin/isolate
 LABEL org.opencontainers.image.title="CodeLobby Judge0 local development" \
-      org.opencontainers.image.version="1.0.0-local"
+      org.opencontainers.image.version="1.1.0"
 USER judge0
 CMD ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]

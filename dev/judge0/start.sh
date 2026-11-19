@@ -2,7 +2,7 @@
 # Start the prebuilt local environment. Secrets are generated once and never printed.
 set -euo pipefail
 cd "$(dirname "$0")"
-image=ghcr.io/ptrthdr/codelobby-judge0@sha256:df4b929480326646edc449c3df7fa52562c0a55ce773529084efc3b819ed8970
+image=ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     echo 'Run this script inside a WSL2 Linux distribution, not Git Bash or PowerShell.' >&2

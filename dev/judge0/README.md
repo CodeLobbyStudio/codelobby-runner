@@ -1,6 +1,6 @@
 # Local Judge0 development environment
 
-Owned by codelobby-runner. The default Compose configuration uses the prebuilt image `ghcr.io/ptrthdr/codelobby-judge0:1.0.0` on the maintainer's personal GitHub Container Registry account. The image is independent of the organization repository. Its immutable manifest digest is pinned in `compose.yaml` and `start.sh`.
+Owned by codelobby-runner. The default Compose configuration uses the prebuilt image `ghcr.io/ptrthdr/codelobby-judge0:1.1.0` on the maintainer's personal GitHub Container Registry account. The image is independent of the organization repository. Its immutable manifest digest is pinned in `compose.yaml` and `start.sh`.
 
 The image provides Java 21, Python 3.12 and C++17, including the local workspace, OOM and compilation-budget adapters. Normal startup downloads it automatically. No image archive or local image build is required.
 
@@ -83,7 +83,7 @@ report evaluation and request-level result aggregation. Evaluation and compilati
 request-wide budgets. Communications use the remaining portion of the 60-second Run deadline.
 Compiler diagnostics are omitted from the aggregate response because they can include host
 test source. The default Spring configuration connects this executor to POST /internal/v1/runs.
-The HTTP adapter admits one active Run and ten pending Runs. If an infrastructure
+By default, the HTTP adapter admits two active Runs and ten pending Runs with the pinned 1.1.0 image and fresh `COUNT=2` configuration. If an infrastructure
 failure leaves execution or cleanup unconfirmed, admission stays quarantined.
 Recover locally by stopping or restarting Judge0 workers, verifying readiness,
 and restarting Runner.
@@ -133,7 +133,23 @@ The modern adapters are baked into the image from `image/`. They provide:
 - Strict fixed-path workspace preparation and cleanup with ordinary unmounts.
 - Confirmed runtime memory-limit reporting based on Isolate metadata and new cgroup OOM-kill events. Exit 137 and participant text alone are not evidence.
 - Separate compilation budgets and fresh runtime accounting.
-- Reuse of Isolate box IDs after cleanup for the supported single worker (`COUNT=1`).
+- Reuse of Isolate box IDs after verified cleanup within one worker container.
+
+The working image sources also include a sandbox reservation pool. An exclusive process lock and an occupied marker reserve an ID before Isolate initialization. The reservation stays held through compilation, execution and cleanup. Release requires confirmation that the workspace, Isolate directory and per-box cgroup are absent. Failed cleanup or a crashed process leaves the ID quarantined. Worker restarts preserve occupied markers. The worker state volume preserves markers across container recreation. The adapter also checks for stale filesystem and cgroup artifacts before initializing a reserved ID. Operators must investigate quarantined slots before recovery, rather than delete reservation files while jobs may be running.
+
+Local lifecycle verification on 2026-11-19 used a separate derived image, Compose project and API port on Apple Silicon. Java 21, Python 3.12 and C++17 programs passed. Compilation failure and execution timeout released their reserved ID after verified cleanup, followed by a successful Java execution. Killing the test worker during an active Python sandbox retained slot 0 across restart, while a subsequent successful Python execution used and released slot 1. In that reservation-only probe, the interrupted submission remained `Processing` in Judge0. The restart-recovery probe below covers the additional reconciliation adapter. Test-only stale workspace and cgroup resources were removed after confirming that no processes remained. The quarantine marker was preserved and the test services were stopped. These checks do not establish concurrent execution support or portability to all hosts.
+
+The working sources also journal each submission before Judge0 can mark it `Processing`. A private, atomic journal links the database ID and token to the reserved sandbox. Recovery runs only during worker boot, before consuming jobs. It requires exclusive job and sandbox locks, matching database and reservation identities, an unpopulated sandbox cgroup including its descendants, and verified workspace/Isolate/cgroup cleanup. Only then does it store Judge0 `Internal Error` (13) with a generic message, clear diagnostics and measurements, release the reservation and remove the pending journal. It never treats HTTP timeout or journal age as proof of termination and does not kill processes during recovery. Unconfirmed cleanup, live locks, identity mismatch or a failed database write prevent worker boot and retain the pending journal for investigation or a later restart.
+
+The working Compose configuration mounts the named `judge0-worker-state` volume at `/var/lib/codelobby-worker-state` in the worker only. Its `jobs` and `slots` directories preserve journals and reservations across worker restart and container recreation. The root-owned parent permits traversal without worker writes, and each worker-owned child requires mode `0700`. Startup initializes missing directories but rejects unexpected ownership, permissions or symlinks without recursively changing existing journal files. Recovery after recreation also handles an empty host cgroup whose ephemeral Isolate directory is already gone, using ordinary `rmdir` after checking the full cgroup is unpopulated. Missing journals, deleted volumes, multiple worker containers and shared distributed ownership are outside this stage. Keep the same Compose project name, state volume and database when recreating the worker. Normal `stop` and `down` preserve named volumes. `down -v` removes the worker state and database volumes and is not a recovery operation. Drain work before upgrading from an earlier experimental image that stored journals under `/run`, since those old files are not automatically migrated. Unknown historical `Processing` submissions are not automatically changed. Fresh private configuration uses `COUNT=2`. Existing configuration is not overwritten, so update an existing `COUNT=1` setting to `2` to match the runner default, or explicitly keep both execution limits at `1`. Do not enable concurrent worker container replicas.
+
+A separate local recovery image was verified on 2026-11-19 on Apple Silicon. All three language smoke checks passed, as did compilation failure, execution timeout and subsequent execution. After SIGKILL during an active Python sandbox, worker restart changed the interrupted submission from `Processing` to `Internal Error` only after confirmed cleanup. Slot 0 was released and reused successfully. A second restart preserved the recovered status and finish timestamp. Source tests also cover blocked recovery for populated cgroups, active locks, wrong owners, malformed journals and database/cleanup failures. The test environment was stopped afterwards. During that earlier probe, the published image and standard startup configuration were unchanged.
+
+A separate persistent-state image was verified on 2026-11-19 on Apple Silicon. The worker was killed during an active Python sandbox and its container was deleted. A read-only check of the surviving named volume confirmed the pending journal and occupied reservation before a replacement worker existed. The replacement had a different container ID and mounted the same state volume. It reconciled the interrupted submission to `Internal Error`, released slot 0 after verified cleanup, and successfully executed subsequent Python and Java programs using that slot. Linux initialization tests cover fresh volume ownership, repeat initialization without data loss, unsafe permissions, wrong owners and symlinks.
+
+The pinned public image 1.1.0 includes these adapters. Fresh startup uses `COUNT=2` and the runner defaults to `RUNNER_EXECUTION_MAX_ACTIVE=2`. Preserve existing private secrets while updating older execution settings. Version 1.0.0 remains available, but does not support this two-process configuration. The current stage supports one or two active operations, with bounded pending capacity, within one runner and one worker container. More processes, replicas and multi-instance queue ownership are outside this verification.
+
+Local concurrency verification on 2026-11-19 used a separate two-process image, API port and runner. Two HTTP Run requests were observed in distinct populated sandbox cgroups at the same time. Accepted and Wrong Answer results remained associated with the correct requests and outputs. One pending request started automatically and an excess request received HTTP 429. A compilation error did not cancel another execution. Killing and deleting the worker container during two active Python executions preserved both journals on the state volume. The replacement worker reconciled both submissions to Internal Error, released both slots and successfully executed subsequent programs. The worker boot wrapper now runs recovery once in a dedicated Rails runner before starting the scheduler and Resque processes. Runtime Rails processes do not repeat recovery. A regression test also covers the initial shared-directory creation race found during the first concurrent trial. These are local functional checks, not capacity or cross-platform certification.
 
 Network access is disabled. Per-file and output limits remain enforced separately by the engine. tmpfs pages can count toward execution memory. A caught resource error can still result in a successful process, so the runner must evaluate the host test report rather than infer a verdict from output text. Host tests sharing a participant sandbox are not tamper-proof grading.
 
@@ -141,12 +157,16 @@ Use `base64_encoded=true` when retrieving Judge0 diagnostics to handle arbitrary
 
 ## Verification and image sources
 
-The packaged image was checked on Apple Silicon with Docker Desktop. The recorded local verification covered 68 engine submissions and 35 adapter tests, including language features, memory allocation, compiler/runtime budgets, network and secret isolation, output/process/storage limits, cleanup, multi-file tasks, recovery and restart. This does not claim verification on every Mac or Linux host. Anonymous registry download was verified with an empty Docker authentication configuration. Repository startup and restart each passed all three language checks. Local layer caches were available during this verification, so a completely cold installation on a second computer remains untested.
+The original 1.0.0 packaged image was checked on Apple Silicon with Docker Desktop. The recorded local verification covered 68 engine submissions and 35 adapter tests, including language features, memory allocation, compiler/runtime budgets, network and secret isolation, output/process/storage limits, cleanup, multi-file tasks, recovery and restart. This does not claim verification on every Mac or Linux host. Anonymous registry download was verified with an empty Docker authentication configuration. Repository startup and restart each passed all three language checks. Local layer caches were available during this verification, so a completely cold installation on a second computer remains untested.
+
+Release 1.1.0 was published and checked on 2026-11-19. Its pinned digest was fetched using an empty Docker authentication configuration. Local layer caches were present, so this is not a cold-installation test. Fresh startup through repository `start.sh` generated private configuration with two worker processes. Java 21, Python 3.12 and C++17 smoke checks passed. A separately started runner using its default two active slots passed the concurrent HTTP Run, result association, pending admission and overflow checks against this published digest. This release was verified locally on Apple Silicon with Docker Desktop, not certified across Linux and Windows hosts.
 
 Run source-level adapter checks from this directory:
 
 ```sh
 ruby tests/confirmed_oom_test.rb "$PWD/image/report-confirmed-oom.rb"
+ruby tests/worker_recovery_test.rb "$PWD/image/worker-recovery.rb"
+ruby tests/sandbox_slots_test.rb "$PWD/image/sandbox-slots.rb"
 ruby tests/bounded_workspace_test.rb "$PWD/image/bounded-workspace.rb"
 ruby tests/compilation_budget_test.rb "$PWD/image/compilation-budget.rb"
 ruby tests/suite_configuration_test.rb "$PWD/image/suite-report.rb"
@@ -154,6 +174,8 @@ python3 tests/startup_test.py
 python3 tests/isolate_phase_test.py
 python3 tests/java_budget_test.py
 ```
+
+The release-verification and worker-state initialization fixture tests require an isolated Linux container running as root: `python3 tests/workspace_release_test.py` and `python3 tests/worker_state_test.py`. It checks filesystem and cgroup path rejection without creating real mounts or cgroups. Pool tests also cover multiple processes reserving distinct IDs and stale markers after process exit. These source-level checks do not replace real Judge0 lifecycle tests of a rebuilt image.
 
 `Dockerfile`, `.dockerignore`, `image/` and `vendor/checksums.txt` record how the image is built. Optional rebuilding:
 

@@ -15,7 +15,7 @@ case "$operation" in
     [[ "$size" =~ ^[1-9][0-9]{0,2}$ ]] && ((size >= 4 && size <= 256)) || fail size
     [[ "$inodes" =~ ^[1-9][0-9]{0,4}$ ]] && ((inodes >= 128 && inodes <= 16384)) || fail inodes
     ;;
-  cleanup) [[ $# -eq 2 ]] || fail arguments ;;
+  cleanup|verify-released|recover) [[ $# -eq 2 ]] || fail arguments ;;
   *) fail operation ;;
 esac
 [[ $EUID -eq 0 ]] || fail privileges
@@ -28,7 +28,7 @@ for path in /var /var/local /var/local/lib "$boxbase"; do
   mode=$(stat -c %a "$path")
   (( (8#$mode & 022) == 0 )) || fail parent-permissions
 done
-if [[ ! -e "$base" ]]; then mkdir -m 0700 "$base"; fi
+mkdir -p -m 0700 "$base"
 [[ -d "$base" && ! -L "$base" && $(stat -c %u "$base") == 0 ]] || fail workspace-parent
 mode=$(stat -c %a "$base")
 (( (8#$mode & 066) == 0 )) || fail workspace-parent-permissions
@@ -38,6 +38,16 @@ mkdir -p -m 0700 /run/codelobby-workspace-locks
 exec 9>"/run/codelobby-workspace-locks/$id"
 flock -n 9 || fail busy
 [[ ! -L "$workspace" && ! -L "$target" && ! -L "$target/box" && ! -L "$target/tmp" ]] || fail symlink
+
+# Release the reservation only when the complete Isolate workspace and cgroup are gone.
+if [[ "$operation" == verify-released ]]; then
+  [[ ! -e "$workspace" && ! -L "$workspace" && ! -e "$target" && ! -L "$target" ]] || fail remaining-workspace
+  root=/sys/fs/cgroup/codelobby-runner-judge0-v1
+  [[ $(cat /run/isolate/cgroup) == "$root" ]] || fail cgroup-root
+  [[ -d "$root" && ! -L "$root" && $(stat -c %u "$root") == 0 ]] || fail cgroup-root
+  [[ ! -e "$root/box-$id" && ! -L "$root/box-$id" ]] || fail remaining-cgroup
+  exit 0
+fi
 
 release_workspace() {
   if ! mountpoint -q "$workspace"; then
@@ -58,6 +68,29 @@ release_workspace() {
   timeout 10 umount "$workspace" || return 1
   rmdir "$workspace"
 }
+if [[ "$operation" == recover ]]; then
+  root=/sys/fs/cgroup/codelobby-runner-judge0-v1
+  [[ $(cat /run/isolate/cgroup) == "$root" ]] || fail cgroup-root
+  [[ -d "$root" && ! -L "$root" && $(stat -c %u "$root") == 0 ]] || fail cgroup-root
+  group=$root/box-$id
+  [[ ! -L "$group" ]] || fail cgroup-symlink
+  if [[ -e "$group" ]]; then
+    [[ -d "$group" && $(stat -c %u "$group") == 0 ]] || fail cgroup-owner
+    # populated covers the complete descendant tree. Never kill unverified processes.
+    grep -qx 'populated 0' "$group/cgroup.events" || fail live-processes
+  fi
+  release_workspace || fail cleanup
+  if [[ -e "$target" ]]; then
+    [[ -d "$target" && $(stat -c %u "$target") == 0 ]] || fail isolate-owner
+    timeout 15 /usr/local/bin/isolate --cg -b "$id" --cleanup || fail isolate-cleanup
+  fi
+  # After container recreation the Isolate directory may be gone while its empty host cgroup remains.
+  # rmdir refuses nonempty groups and descendants. Never recursively delete or kill processes here.
+  if [[ -d "$group" ]]; then rmdir "$group" || fail remaining-cgroup; fi
+  [[ ! -e "$workspace" && ! -L "$workspace" && ! -e "$target" && ! -L "$target" ]] || fail remaining-workspace
+  [[ ! -e "$group" && ! -L "$group" ]] || fail remaining-cgroup
+  exit 0
+fi
 if [[ "$operation" == cleanup ]]; then
   release_workspace || fail cleanup
   exit 0

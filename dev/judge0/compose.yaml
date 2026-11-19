@@ -1,7 +1,7 @@
 name: codelobby-runner-modern
 services:
   server:
-    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:df4b929480326646edc449c3df7fa52562c0a55ce773529084efc3b819ed8970
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
     pull_policy: missing
     platform: linux/amd64
     command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]
@@ -24,7 +24,7 @@ services:
         condition: service_healthy
 
   workers:
-    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:df4b929480326646edc449c3df7fa52562c0a55ce773529084efc3b819ed8970
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
     pull_policy: missing
     platform: linux/amd64
     command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "workers"]
@@ -32,6 +32,7 @@ services:
       ISOLATE_CGROUP_ROOT: /sys/fs/cgroup/codelobby-runner-judge0-v1
     volumes:
       - ${JUDGE0_CONFIG_FILE:-./judge0.conf}:/judge0.conf:ro
+      - judge0-worker-state:/var/lib/codelobby-worker-state
     privileged: true
     cgroup: host
     restart: unless-stopped
@@ -71,3 +72,4 @@ services:
 
 volumes:
   judge0-data:
+  judge0-worker-state:

@@ -18,6 +18,8 @@ COPY image/modern-languages.rb /api/db/languages/codelobby_modern.rb
 COPY image/report-confirmed-oom.rb /api/config/initializers/codelobby_confirmed_oom.rb
 COPY image/bounded-workspace.rb /api/config/initializers/codelobby_bounded_workspace.rb
 COPY image/sandbox-slots.rb /usr/local/lib/codelobby/sandbox-slots.rb
+COPY image/worker-recovery.rb /usr/local/lib/codelobby/worker-recovery.rb
+COPY image/worker-recovery-initializer.rb /api/config/initializers/zzzz_codelobby_worker_recovery.rb
 COPY image/compilation-budget.rb /api/config/initializers/zz_codelobby_compilation_budget.rb
 COPY image/start-without-env-log.sh image/workspace-helper.sh image/reset-compile-cgroup.sh image/java-with-budget.sh /usr/local/bin/
 COPY image/isolate-with-workspace.sh /opt/codelobby-bin/isolate

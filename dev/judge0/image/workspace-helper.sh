@@ -15,7 +15,7 @@ case "$operation" in
     [[ "$size" =~ ^[1-9][0-9]{0,2}$ ]] && ((size >= 4 && size <= 256)) || fail size
     [[ "$inodes" =~ ^[1-9][0-9]{0,4}$ ]] && ((inodes >= 128 && inodes <= 16384)) || fail inodes
     ;;
-  cleanup|verify-released) [[ $# -eq 2 ]] || fail arguments ;;
+  cleanup|verify-released|recover) [[ $# -eq 2 ]] || fail arguments ;;
   *) fail operation ;;
 esac
 [[ $EUID -eq 0 ]] || fail privileges
@@ -68,6 +68,26 @@ release_workspace() {
   timeout 10 umount "$workspace" || return 1
   rmdir "$workspace"
 }
+if [[ "$operation" == recover ]]; then
+  root=/sys/fs/cgroup/codelobby-runner-judge0-v1
+  [[ $(cat /run/isolate/cgroup) == "$root" ]] || fail cgroup-root
+  [[ -d "$root" && ! -L "$root" && $(stat -c %u "$root") == 0 ]] || fail cgroup-root
+  group=$root/box-$id
+  [[ ! -L "$group" ]] || fail cgroup-symlink
+  if [[ -e "$group" ]]; then
+    [[ -d "$group" && $(stat -c %u "$group") == 0 ]] || fail cgroup-owner
+    # populated covers the complete descendant tree. Never kill unverified processes.
+    grep -qx 'populated 0' "$group/cgroup.events" || fail live-processes
+  fi
+  release_workspace || fail cleanup
+  if [[ -e "$target" ]]; then
+    [[ -d "$target" && $(stat -c %u "$target") == 0 ]] || fail isolate-owner
+    timeout 15 /usr/local/bin/isolate --cg -b "$id" --cleanup || fail isolate-cleanup
+  fi
+  [[ ! -e "$workspace" && ! -L "$workspace" && ! -e "$target" && ! -L "$target" ]] || fail remaining-workspace
+  [[ ! -e "$group" && ! -L "$group" ]] || fail remaining-cgroup
+  exit 0
+fi
 if [[ "$operation" == cleanup ]]; then
   release_workspace || fail cleanup
   exit 0

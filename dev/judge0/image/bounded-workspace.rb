@@ -32,7 +32,8 @@ module CodeLobbyBoundedWorkspace
     raise "Previous sandbox reservation was not released" if @codelobby_sandbox_lease
     @bounded_workspace_size = CodeLobbyBoundedWorkspace.setting("WORKSPACE_SIZE_MIB", 64, 4..256)
     @bounded_workspace_inodes = CodeLobbyBoundedWorkspace.setting("WORKSPACE_INODES", 4096, 128..16384)
-    @codelobby_sandbox_lease = sandbox_pool.acquire
+    @codelobby_sandbox_lease = sandbox_pool.acquire(owner: @codelobby_owner_token)
+    @codelobby_journal.assign(box_id) if @codelobby_journal
     # Also reject stale artifacts when a container was recreated without its reservation files.
     workspace_operation("verify-released", box_id.to_s)
     super

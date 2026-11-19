@@ -71,6 +71,21 @@ class WorkspaceReleaseTests(unittest.TestCase):
                 self.assertTrue(artifact.is_symlink())
                 artifact.unlink()
 
+    def test_recovery_does_not_touch_a_populated_cgroup(self):
+        group = self.cgroup / "box-7"
+        group.mkdir()
+        (group / "cgroup.events").write_text("populated 1\nfrozen 0\n")
+        workspace = self.base / "7"
+        workspace.mkdir()
+        self.assertNotEqual(self.verify("recover").returncode, 0)
+        self.assertTrue(workspace.is_dir())
+        self.assertTrue(group.is_dir())
+
+    def test_recovery_without_remaining_resources_is_idempotent(self):
+        for _ in range(2):
+            result = self.verify("recover")
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_unknown_cgroup_root_blocks_release(self):
         (self.runtime / "cgroup").write_text("/unknown\n")
         self.assertNotEqual(self.verify().returncode, 0)

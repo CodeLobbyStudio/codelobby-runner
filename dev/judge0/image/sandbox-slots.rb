@@ -36,7 +36,32 @@ module CodeLobbySandboxSlots
       @size = size
     end
 
-    def acquire
+    # Only restart recovery holding the matching job journal may claim a stale reservation.
+    def recover(id, owner)
+      raise "Invalid recovery sandbox" unless id.is_a?(Integer) && (0...@size).cover?(id)
+      raise "Invalid sandbox owner" unless /\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/.match?(owner.to_s)
+      directory = File.lstat(@root)
+      raise "Unsafe sandbox reservation directory" unless directory.directory? && directory.uid == Process.euid && (directory.mode & 0077).zero?
+      file = File.open(File.join(@root, id.to_s), File::RDWR | File::NOFOLLOW)
+      begin
+        file.close_on_exec = true
+        stat = file.stat
+        raise "Unsafe sandbox reservation file" unless stat.file? && stat.nlink == 1 && stat.uid == Process.euid && (stat.mode & 0077).zero?
+        raise Unavailable, "Sandbox still owned" unless file.flock(File::LOCK_EX | File::LOCK_NB)
+        raise "Sandbox owner mismatch" if file.size > 128 || !["", "reserved #{owner}\n"].include?(file.read)
+        file.rewind
+        file.write("reserved #{owner}\n")
+        file.flush
+        file.fsync
+        Lease.new(id, file)
+      rescue Exception
+        file.close
+        raise
+      end
+    end
+
+    def acquire(owner: nil)
+      raise "Invalid sandbox owner" unless owner.nil? || /\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/.match?(owner)
       directory = File.lstat(@root)
       unless directory.directory? && directory.uid == Process.euid && (directory.mode & 0077).zero?
         raise "Unsafe sandbox reservation directory"
@@ -53,7 +78,7 @@ module CodeLobbySandboxSlots
           next unless file.flock(File::LOCK_EX | File::LOCK_NB)
           # A marker left after a crash or failed cleanup is deliberately not recycled.
           next unless file.size.zero?
-          file.write("reserved\n")
+          file.write(owner ? "reserved #{owner}\n" : "reserved\n")
           file.flush
           file.fsync
           lease = Lease.new(id, file)

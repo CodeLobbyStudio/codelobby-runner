@@ -23,7 +23,7 @@ public class RunConfiguration {
 
     @Bean
     ExecutionQueue executionQueue(ExecutionProperties properties) {
-        return new ExecutionQueue(properties.maxPending());
+        return new ExecutionQueue(properties.maxActive(), properties.maxPending());
     }
 
     @Bean

@@ -28,7 +28,7 @@ for path in /var /var/local /var/local/lib "$boxbase"; do
   mode=$(stat -c %a "$path")
   (( (8#$mode & 022) == 0 )) || fail parent-permissions
 done
-if [[ ! -e "$base" ]]; then mkdir -m 0700 "$base"; fi
+mkdir -p -m 0700 "$base"
 [[ -d "$base" && ! -L "$base" && $(stat -c %u "$base") == 0 ]] || fail workspace-parent
 mode=$(stat -c %a "$base")
 (( (8#$mode & 066) == 0 )) || fail workspace-parent-permissions

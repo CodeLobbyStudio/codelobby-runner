@@ -35,6 +35,7 @@ class RunConfigurationTests {
             assertThat(context).hasNotFailed().hasSingleBean(ExecutionProperties.class)
                     .hasSingleBean(ExecutionQueue.class).hasSingleBean(SubmissionExecutor.class);
             assertThat(context.getBean(ExecutionProperties.class).maxPending()).isEqualTo(10);
+            assertThat(context.getBean(ExecutionProperties.class).maxActive()).isEqualTo(1);
             var queue = context.getBean(ExecutionQueue.class);
             assertThat(queue).isSameAs(context.getBean(ExecutionQueue.class));
             verifyNoInteractions(context.getBean(Judge0Client.class));
@@ -53,9 +54,10 @@ class RunConfigurationTests {
     @Test
     void resolvesEnvironmentVariablePlaceholderFromApplicationYaml() {
         contextRunner.withInitializer(new ConfigDataApplicationContextInitializer())
-                .withSystemProperties("RUNNER_EXECUTION_MAX_PENDING=3").run(context -> {
+                .withSystemProperties("RUNNER_EXECUTION_MAX_PENDING=3", "RUNNER_EXECUTION_MAX_ACTIVE=2").run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getBean(ExecutionProperties.class).maxPending()).isEqualTo(3);
+                    assertThat(context.getBean(ExecutionProperties.class).maxActive()).isEqualTo(2);
                     verifyNoInteractions(context.getBean(Judge0Client.class));
                 });
     }
@@ -96,10 +98,17 @@ class RunConfigurationTests {
         });
     }
 
+    @Test
+    void rejectsCombinedCapacityOverflow() {
+        contextRunner.withPropertyValues("runner.execution.max-active=2", "runner.execution.max-pending=2147483646")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
     @ParameterizedTest
     @CsvSource({
             "max-pending, -1", "max-pending, 2147483647", "max-pending, 2147483648",
             "max-pending, 1.5", "max-pending, not-a-number", "max-pending, true",
+            "max-active, 0", "max-active, -1", "max-active, 3", "max-active, 1.5",
             "unknown-setting, 1"
     })
     void rejectsInvalidExecutionConfigurationAtStartup(String property, String value) {

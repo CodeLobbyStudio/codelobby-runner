@@ -221,8 +221,20 @@ class BoundedWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_does_not_enable_multiple_workers_in_this_stage
+  def test_two_worker_processes_use_distinct_reserved_ids
     ENV["COUNT"] = "2"
+    first = job
+    second = job
+    first.send(:initialize_workdir)
+    second.send(:initialize_workdir)
+    assert_equal [0, 1], [first.box_id, second.box_id]
+    first.send(:cleanup)
+    second.send(:cleanup)
+    assert_equal 0, next_lease.id
+  end
+
+  def test_rejects_more_than_two_worker_processes_in_this_stage
+    ENV["COUNT"] = "3"
     assert_raises(RuntimeError) { job.send(:initialize_workdir) }
     assert_equal 0, next_lease.id
   end

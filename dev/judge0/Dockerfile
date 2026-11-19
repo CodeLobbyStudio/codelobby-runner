@@ -27,6 +27,6 @@ RUN printf '\nrequire_relative "codelobby_modern"\n' >> /api/db/languages/active
     chmod 0755 /usr/local/bin/initialize-worker-state.sh /usr/local/bin/start-without-env-log.sh /usr/local/bin/workspace-helper.sh \
         /usr/local/bin/reset-compile-cgroup.sh /usr/local/bin/java-with-budget.sh /opt/codelobby-bin/isolate
 LABEL org.opencontainers.image.title="CodeLobby Judge0 local development" \
-      org.opencontainers.image.version="1.0.0-local"
+      org.opencontainers.image.version="1.1.0"
 USER judge0
 CMD ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]

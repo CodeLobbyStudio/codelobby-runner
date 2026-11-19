@@ -250,6 +250,9 @@ class ExecutionQueueTests {
 
     @Test
     void rejectsInvalidArgumentsBeforeConsumingCapacity() {
+        assertThatThrownBy(() -> new ExecutionQueue(0, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExecutionQueue(3, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExecutionQueue(2, Integer.MAX_VALUE - 1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ExecutionQueue(-1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ExecutionQueue(Integer.MAX_VALUE)).isInstanceOf(IllegalArgumentException.class);
         var queue = new ExecutionQueue(0);
@@ -259,6 +262,105 @@ class ExecutionQueueTests {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> queue.execute(TIMEOUT, null)).isInstanceOf(NullPointerException.class);
         assertThatCode(() -> queue.execute(TIMEOUT, remaining -> "valid")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void runsTwoOperationsTogetherAndStartsPendingWorkWhenOneFinishes() throws Exception {
+        var queue = new ExecutionQueue(2, 1);
+        var bothEntered = new CountDownLatch(2);
+        var firstRelease = new CountDownLatch(1);
+        var secondRelease = new CountDownLatch(1);
+        var pendingEntered = new CountDownLatch(1);
+        var active = new AtomicInteger();
+        var peak = new AtomicInteger();
+        var first = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            peak.accumulateAndGet(active.incrementAndGet(), Math::max);
+            bothEntered.countDown();
+            await(firstRelease);
+            active.decrementAndGet();
+            return "first";
+        }));
+        var second = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            peak.accumulateAndGet(active.incrementAndGet(), Math::max);
+            bothEntered.countDown();
+            await(secondRelease);
+            active.decrementAndGet();
+            return "second";
+        }));
+        var pending = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            peak.accumulateAndGet(active.incrementAndGet(), Math::max);
+            pendingEntered.countDown();
+            active.decrementAndGet();
+            return "pending";
+        }));
+        var firstThread = new Thread(first);
+        var secondThread = new Thread(second);
+        var pendingThread = new Thread(pending);
+        firstThread.start();
+        secondThread.start();
+        try {
+            await(bothEntered);
+            pendingThread.start();
+            awaitQueueWait(pendingThread);
+            assertThatThrownBy(() -> queue.execute(TIMEOUT, remaining -> "overflow"))
+                    .isInstanceOf(RunQueueFullException.class);
+            firstRelease.countDown();
+            await(pendingEntered);
+            assertThat(second.isDone()).isFalse();
+        } finally {
+            firstRelease.countDown();
+            secondRelease.countDown();
+        }
+        assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo("first");
+        assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo("second");
+        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo("pending");
+        assertThat(peak).hasValue(2);
+        assertThat(active).hasValue(0);
+        var reused = queue.execute(TIMEOUT, remaining -> "reused");
+        assertThat(reused).isEqualTo("reused");
+    }
+
+    @Test
+    void quarantinesNewWorkWithoutCancellingAnotherActiveOperation() throws Exception {
+        var queue = new ExecutionQueue(2, 1);
+        var entered = new CountDownLatch(2);
+        var fail = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        var invoked = new AtomicBoolean();
+        var broken = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            entered.countDown();
+            await(fail);
+            throw new IllegalStateException("Termination unconfirmed");
+        }));
+        var healthy = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            entered.countDown();
+            await(finish);
+            return "healthy";
+        }));
+        var waiting = new FutureTask<>(() -> queue.execute(TIMEOUT, remaining -> {
+            invoked.set(true);
+            return "must not run";
+        }));
+        new Thread(broken).start();
+        new Thread(healthy).start();
+        var waitingThread = new Thread(waiting);
+        try {
+            await(entered);
+            waitingThread.start();
+            awaitQueueWait(waitingThread);
+            fail.countDown();
+            assertThatThrownBy(() -> broken.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> waiting.get(5, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(ExecutionUnavailableException.class);
+            assertThatThrownBy(() -> queue.execute(TIMEOUT, remaining -> "new"))
+                    .isInstanceOf(ExecutionUnavailableException.class);
+            assertThat(healthy.isDone()).isFalse();
+        } finally {
+            fail.countDown();
+            finish.countDown();
+        }
+        assertThat(healthy.get(5, TimeUnit.SECONDS)).isEqualTo("healthy");
+        assertThat(invoked).isFalse();
     }
 
     private static void await(CountDownLatch latch) {

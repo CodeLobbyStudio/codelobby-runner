@@ -4,30 +4,39 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
- * Shared in-memory admission with one active operation and bounded waiting capacity.
+ * Shared in-memory admission with configurable active and bounded waiting capacity.
  * Callers execute synchronously and must share this instance. No jobs or results are persisted.
  */
 public final class ExecutionQueue {
 
     private final Semaphore capacity;
-    private final ReentrantLock pipeline = new ReentrantLock(true);
+    private final Semaphore pipeline;
     private final LongSupplier nanoTime;
     private volatile boolean quarantined;
 
     public ExecutionQueue(int pendingCapacity) {
-        this(pendingCapacity, System::nanoTime);
+        this(1, pendingCapacity, System::nanoTime);
+    }
+
+    public ExecutionQueue(int activeCapacity, int pendingCapacity) {
+        this(activeCapacity, pendingCapacity, System::nanoTime);
     }
 
     ExecutionQueue(int pendingCapacity, LongSupplier nanoTime) {
-        if (pendingCapacity < 0 || pendingCapacity == Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("Pending capacity must allow one additional active operation");
+        this(1, pendingCapacity, nanoTime);
+    }
+
+    ExecutionQueue(int activeCapacity, int pendingCapacity, LongSupplier nanoTime) {
+        if (activeCapacity < 1 || activeCapacity > 2 || pendingCapacity < 0
+                || (long) activeCapacity + pendingCapacity > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Active capacity must be 1 or 2 and total capacity must fit an integer");
         }
-        this.capacity = new Semaphore(1 + pendingCapacity);
+        this.capacity = new Semaphore(activeCapacity + pendingCapacity);
+        this.pipeline = new Semaphore(activeCapacity, true);
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
     }
 
@@ -47,7 +56,7 @@ public final class ExecutionQueue {
         boolean locked = false;
         try {
             long started = nanoTime.getAsLong();
-            locked = pipeline.tryLock(remainingNanos(started, budget), TimeUnit.NANOSECONDS);
+            locked = pipeline.tryAcquire(remainingNanos(started, budget), TimeUnit.NANOSECONDS);
             if (!locked) {
                 throw new RunDeadlineExceededException();
             }
@@ -69,7 +78,7 @@ public final class ExecutionQueue {
             throw new ExecutionUnavailableException();
         } finally {
             if (locked) {
-                pipeline.unlock();
+                pipeline.release();
             }
             capacity.release();
         }

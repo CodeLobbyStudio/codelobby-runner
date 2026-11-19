@@ -86,6 +86,15 @@ class WorkspaceReleaseTests(unittest.TestCase):
             result = self.verify("recover")
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_distinct_slots_can_initialize_the_shared_parent_concurrently(self):
+        self.base.rmdir()
+        processes = [subprocess.Popen(["bash", str(self.helper), "verify-released", str(slot)],
+                                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                     for slot in (7, 8)]
+        for process in processes:
+            _, error = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 0, error)
+
     def test_unknown_cgroup_root_blocks_release(self):
         (self.runtime / "cgroup").write_text("/unknown\n")
         self.assertNotEqual(self.verify().returncode, 0)

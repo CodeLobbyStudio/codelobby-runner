@@ -28,7 +28,7 @@ module CodeLobbyBoundedWorkspace
   private
 
   def initialize_workdir
-    CodeLobbyBoundedWorkspace.setting("COUNT", 1, 1..1)
+    CodeLobbyBoundedWorkspace.setting("COUNT", 1, 1..2)
     raise "Previous sandbox reservation was not released" if @codelobby_sandbox_lease
     @bounded_workspace_size = CodeLobbyBoundedWorkspace.setting("WORKSPACE_SIZE_MIB", 64, 4..256)
     @bounded_workspace_inodes = CodeLobbyBoundedWorkspace.setting("WORKSPACE_INODES", 4096, 128..16384)

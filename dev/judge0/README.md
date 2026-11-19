@@ -135,18 +135,25 @@ The modern adapters are baked into the image from `image/`. They provide:
 - Separate compilation budgets and fresh runtime accounting.
 - Reuse of Isolate box IDs after cleanup for the supported single worker (`COUNT=1`).
 
+The working image sources also include a sandbox reservation pool. An exclusive process lock and an occupied marker reserve an ID before Isolate initialization. The reservation stays held through compilation, execution and cleanup. Release requires confirmation that the workspace, Isolate directory and per-box cgroup are absent. Failed cleanup or a crashed process leaves the ID quarantined. Worker restarts preserve occupied markers. Container recreation can lose reservation markers, so this stage also checks for stale filesystem and cgroup artifacts. The adapter also checks for stale filesystem and cgroup artifacts before initializing a reserved ID. Operators must investigate quarantined slots before recovery, rather than delete reservation files while jobs may be running.
+
+Local lifecycle verification on 2026-11-19 used a separate derived image, Compose project and API port on Apple Silicon. Java 21, Python 3.12 and C++17 programs passed. Compilation failure and execution timeout released their reserved ID after verified cleanup, followed by a successful Java execution. Killing the test worker during an active Python sandbox retained slot 0 across restart, while a subsequent successful Python execution used and released slot 1. The interrupted submission remained `Processing` in Judge0. Automatic reconciliation is outside this stage. Test-only stale workspace and cgroup resources were removed after confirming that no processes remained. The quarantine marker was preserved and the test services were stopped. These checks do not establish concurrent execution support or portability to all hosts.
+
+These source changes are not activated by normal startup of the currently pinned published image. They require a separately built and verified replacement image. `COUNT=1` and the runner's single active execution remain enforced. The reservation pool is preparation for later concurrency work and does not enable parallel submissions by itself.
+
 Network access is disabled. Per-file and output limits remain enforced separately by the engine. tmpfs pages can count toward execution memory. A caught resource error can still result in a successful process, so the runner must evaluate the host test report rather than infer a verdict from output text. Host tests sharing a participant sandbox are not tamper-proof grading.
 
 Use `base64_encoded=true` when retrieving Judge0 diagnostics to handle arbitrary diagnostic bytes. HTTP polling timeouts do not prove program termination.
 
 ## Verification and image sources
 
-The packaged image was checked on Apple Silicon with Docker Desktop. The recorded local verification covered 68 engine submissions and 35 adapter tests, including language features, memory allocation, compiler/runtime budgets, network and secret isolation, output/process/storage limits, cleanup, multi-file tasks, recovery and restart. This does not claim verification on every Mac or Linux host. Anonymous registry download was verified with an empty Docker authentication configuration. Repository startup and restart each passed all three language checks. Local layer caches were available during this verification, so a completely cold installation on a second computer remains untested.
+The published packaged image was checked on Apple Silicon with Docker Desktop. The recorded local verification covered 68 engine submissions and 35 adapter tests, including language features, memory allocation, compiler/runtime budgets, network and secret isolation, output/process/storage limits, cleanup, multi-file tasks, recovery and restart. This does not claim verification on every Mac or Linux host. Anonymous registry download was verified with an empty Docker authentication configuration. Repository startup and restart each passed all three language checks. Local layer caches were available during this verification, so a completely cold installation on a second computer remains untested.
 
 Run source-level adapter checks from this directory:
 
 ```sh
 ruby tests/confirmed_oom_test.rb "$PWD/image/report-confirmed-oom.rb"
+ruby tests/sandbox_slots_test.rb "$PWD/image/sandbox-slots.rb"
 ruby tests/bounded_workspace_test.rb "$PWD/image/bounded-workspace.rb"
 ruby tests/compilation_budget_test.rb "$PWD/image/compilation-budget.rb"
 ruby tests/suite_configuration_test.rb "$PWD/image/suite-report.rb"
@@ -154,6 +161,8 @@ python3 tests/startup_test.py
 python3 tests/isolate_phase_test.py
 python3 tests/java_budget_test.py
 ```
+
+The release-verification fixture tests require an isolated Linux container running as root: `python3 tests/workspace_release_test.py`. It checks filesystem and cgroup path rejection without creating real mounts or cgroups. Pool tests also cover multiple processes reserving distinct IDs and stale markers after process exit. These source-level checks do not replace real Judge0 lifecycle tests of a rebuilt image.
 
 `Dockerfile`, `.dockerignore`, `image/` and `vendor/checksums.txt` record how the image is built. Optional rebuilding:
 

@@ -24,6 +24,17 @@ if [[ "$1" == workers ]]; then
   # Isolate/workspace paths must not have writable ancestors.
   sudo chmod go-w /var/local /var/local/lib
   export PATH="/opt/codelobby-bin:$PATH"
+  sudo mkdir -p /var/local/lib/isolate
+  slots=/run/codelobby-sandbox-slots
+  # Preserve occupied markers across worker restarts. Never clear them automatically.
+  if [[ -e "$slots" || -L "$slots" ]]; then
+    [[ -d "$slots" && ! -L "$slots" && $(stat -c %u "$slots") == "$(id -u)" && $(stat -c %a "$slots") == 700 ]] || {
+      echo 'Unsafe sandbox reservation directory' >&2
+      exit 1
+    }
+  else
+    sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$slots"
+  fi
 fi
 if [[ "$1" == workers ]]; then
   sudo mkdir -p /sys/fs/cgroup/codelobby-runner-judge0-v1

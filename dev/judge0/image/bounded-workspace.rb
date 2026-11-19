@@ -1,5 +1,6 @@
 # Per-submission /box + /tmp capacity for the pinned experimental Mac image.
 require "digest"
+require "/usr/local/lib/codelobby/sandbox-slots" unless defined?(CodeLobbySandboxSlots)
 
 module CodeLobbyBoundedWorkspace
   HELPER = "/usr/local/bin/workspace-helper.sh"
@@ -12,19 +13,28 @@ module CodeLobbyBoundedWorkspace
     value
   end
 
-  # This package deliberately runs one worker. Reuse Isolate's 1000 box IDs
-  # after each submission is cleaned up instead of exhausting them after 999 jobs.
+  def perform(*args)
+    super
+  ensure
+    # Unexpected exits retain the occupied marker. Process death releases flock only.
+    @codelobby_sandbox_lease.quarantine if @codelobby_sandbox_lease
+  end
+
   def box_id
-    Integer(super) % 1000
+    raise "Sandbox slot has not been reserved" unless @codelobby_sandbox_lease
+    @codelobby_sandbox_lease.id
   end
 
   private
 
   def initialize_workdir
     CodeLobbyBoundedWorkspace.setting("COUNT", 1, 1..1)
-    raise "Previous bounded workspace was not released" if @bounded_workspace_prepared
+    raise "Previous sandbox reservation was not released" if @codelobby_sandbox_lease
     @bounded_workspace_size = CodeLobbyBoundedWorkspace.setting("WORKSPACE_SIZE_MIB", 64, 4..256)
     @bounded_workspace_inodes = CodeLobbyBoundedWorkspace.setting("WORKSPACE_INODES", 4096, 128..16384)
+    @codelobby_sandbox_lease = sandbox_pool.acquire
+    # Also reject stale artifacts when a container was recreated without its reservation files.
+    workspace_operation("verify-released", box_id.to_s)
     super
   end
 
@@ -40,12 +50,31 @@ module CodeLobbyBoundedWorkspace
   end
 
   def cleanup(*args)
-    if @bounded_workspace_prepared
-      # Unmount before Isolate removes its directories. Never use lazy unmount.
-      workspace_operation("cleanup", Integer(box_id).to_s)
-      @bounded_workspace_prepared = false
+    # Judge0 may call cleanup(false) even when initialization failed before paths existed.
+    return unless @codelobby_sandbox_lease
+    return if @codelobby_sandbox_cleanup_failed
+    begin
+      expected = "/var/local/lib/isolate/#{box_id}"
+      unless workdir == expected && boxdir == expected + "/box" && tmpdir == expected + "/tmp"
+        raise "Unverified sandbox cleanup paths"
+      end
+      if @bounded_workspace_prepared
+        workspace_operation("cleanup", box_id.to_s)
+        @bounded_workspace_prepared = false
+      end
+      super
+      workspace_operation("verify-released", box_id.to_s)
+      @codelobby_sandbox_lease.release
+      @codelobby_sandbox_lease = nil
+    rescue StandardError
+      @codelobby_sandbox_cleanup_failed = true
+      @codelobby_sandbox_lease.quarantine
+      raise unless args.first == false
     end
-    super
+  end
+
+  def sandbox_pool
+    CodeLobbySandboxSlots::Pool.new
   end
 
   def workspace_operation(*args)

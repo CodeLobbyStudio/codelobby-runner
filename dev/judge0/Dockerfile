@@ -17,6 +17,7 @@ COPY --from=toolchains /usr/local/codelobby /usr/local/codelobby
 COPY image/modern-languages.rb /api/db/languages/codelobby_modern.rb
 COPY image/report-confirmed-oom.rb /api/config/initializers/codelobby_confirmed_oom.rb
 COPY image/bounded-workspace.rb /api/config/initializers/codelobby_bounded_workspace.rb
+COPY image/sandbox-slots.rb /usr/local/lib/codelobby/sandbox-slots.rb
 COPY image/compilation-budget.rb /api/config/initializers/zz_codelobby_compilation_budget.rb
 COPY image/start-without-env-log.sh image/workspace-helper.sh image/reset-compile-cgroup.sh image/java-with-budget.sh /usr/local/bin/
 COPY image/isolate-with-workspace.sh /opt/codelobby-bin/isolate

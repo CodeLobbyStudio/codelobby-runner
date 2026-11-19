@@ -15,7 +15,7 @@ case "$operation" in
     [[ "$size" =~ ^[1-9][0-9]{0,2}$ ]] && ((size >= 4 && size <= 256)) || fail size
     [[ "$inodes" =~ ^[1-9][0-9]{0,4}$ ]] && ((inodes >= 128 && inodes <= 16384)) || fail inodes
     ;;
-  cleanup) [[ $# -eq 2 ]] || fail arguments ;;
+  cleanup|verify-released) [[ $# -eq 2 ]] || fail arguments ;;
   *) fail operation ;;
 esac
 [[ $EUID -eq 0 ]] || fail privileges
@@ -38,6 +38,16 @@ mkdir -p -m 0700 /run/codelobby-workspace-locks
 exec 9>"/run/codelobby-workspace-locks/$id"
 flock -n 9 || fail busy
 [[ ! -L "$workspace" && ! -L "$target" && ! -L "$target/box" && ! -L "$target/tmp" ]] || fail symlink
+
+# Release the reservation only when the complete Isolate workspace and cgroup are gone.
+if [[ "$operation" == verify-released ]]; then
+  [[ ! -e "$workspace" && ! -L "$workspace" && ! -e "$target" && ! -L "$target" ]] || fail remaining-workspace
+  root=/sys/fs/cgroup/codelobby-runner-judge0-v1
+  [[ $(cat /run/isolate/cgroup) == "$root" ]] || fail cgroup-root
+  [[ -d "$root" && ! -L "$root" && $(stat -c %u "$root") == 0 ]] || fail cgroup-root
+  [[ ! -e "$root/box-$id" && ! -L "$root/box-$id" ]] || fail remaining-cgroup
+  exit 0
+fi
 
 release_workspace() {
   if ! mountpoint -q "$workspace"; then

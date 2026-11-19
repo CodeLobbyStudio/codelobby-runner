@@ -5,7 +5,7 @@ spring:
 runner:
   internal-key: ${CODELOBBY_INTERNAL_KEY:}
   execution:
-    max-active: ${RUNNER_EXECUTION_MAX_ACTIVE:1}
+    max-active: ${RUNNER_EXECUTION_MAX_ACTIVE:2}
     max-pending: ${RUNNER_EXECUTION_MAX_PENDING:10}
   judge0:
     base-url: ${JUDGE0_URL:http://127.0.0.1:2359}

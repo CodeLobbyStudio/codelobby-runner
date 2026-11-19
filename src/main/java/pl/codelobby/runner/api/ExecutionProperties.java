@@ -3,9 +3,9 @@ package pl.codelobby.runner.api;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-/** Trusted deployment settings for active and waiting capacity. Defaults retain serial execution. */
+/** Trusted deployment settings for active and waiting capacity. Defaults match the published two-process Judge0 image. */
 @ConfigurationProperties(prefix = "runner.execution", ignoreUnknownFields = false)
-public record ExecutionProperties(@DefaultValue("1") int maxActive, @DefaultValue("10") int maxPending) {
+public record ExecutionProperties(@DefaultValue("2") int maxActive, @DefaultValue("10") int maxPending) {
 
     public ExecutionProperties {
         if (maxActive < 1 || maxActive > 2 || maxPending < 0

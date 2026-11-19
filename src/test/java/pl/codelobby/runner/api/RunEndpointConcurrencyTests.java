@@ -48,7 +48,8 @@ import static org.mockito.Mockito.when;
 
 /** Real HTTP, validation, coordinator and evaluator. Only the engine client is controlled. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "runner.internal-key=synthetic-concurrency-key-123456789012345")
+        properties = {"runner.internal-key=synthetic-concurrency-key-123456789012345",
+                "runner.execution.max-active=1"})
 @Import(RunEndpointConcurrencyTests.EngineConfiguration.class)
 class RunEndpointConcurrencyTests {
 

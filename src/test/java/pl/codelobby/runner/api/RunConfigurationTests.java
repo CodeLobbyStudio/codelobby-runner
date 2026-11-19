@@ -35,7 +35,7 @@ class RunConfigurationTests {
             assertThat(context).hasNotFailed().hasSingleBean(ExecutionProperties.class)
                     .hasSingleBean(ExecutionQueue.class).hasSingleBean(SubmissionExecutor.class);
             assertThat(context.getBean(ExecutionProperties.class).maxPending()).isEqualTo(10);
-            assertThat(context.getBean(ExecutionProperties.class).maxActive()).isEqualTo(1);
+            assertThat(context.getBean(ExecutionProperties.class).maxActive()).isEqualTo(2);
             var queue = context.getBean(ExecutionQueue.class);
             assertThat(queue).isSameAs(context.getBean(ExecutionQueue.class));
             verifyNoInteractions(context.getBean(Judge0Client.class));
@@ -66,7 +66,7 @@ class RunConfigurationTests {
     void zeroWaitingLimitRejectsRunWhileSharedExecutionSlotIsOccupied() throws Exception {
         var request = JsonMapper.builder().build()
                 .readValue(Path.of("docs/api/examples/run-request.json").toFile(), RunRequest.class);
-        contextRunner.withPropertyValues("runner.execution.max-pending=0").run(context -> {
+        contextRunner.withPropertyValues("runner.execution.max-pending=0", "runner.execution.max-active=1").run(context -> {
             assertThat(context).hasNotFailed();
             var queue = context.getBean(ExecutionQueue.class);
             var executor = context.getBean(SubmissionExecutor.class);

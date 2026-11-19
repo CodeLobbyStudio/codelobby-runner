@@ -84,6 +84,9 @@ if [[ "$operation" == recover ]]; then
     [[ -d "$target" && $(stat -c %u "$target") == 0 ]] || fail isolate-owner
     timeout 15 /usr/local/bin/isolate --cg -b "$id" --cleanup || fail isolate-cleanup
   fi
+  # After container recreation the Isolate directory may be gone while its empty host cgroup remains.
+  # rmdir refuses nonempty groups and descendants. Never recursively delete or kill processes here.
+  if [[ -d "$group" ]]; then rmdir "$group" || fail remaining-cgroup; fi
   [[ ! -e "$workspace" && ! -L "$workspace" && ! -e "$target" && ! -L "$target" ]] || fail remaining-workspace
   [[ ! -e "$group" && ! -L "$group" ]] || fail remaining-cgroup
   exit 0

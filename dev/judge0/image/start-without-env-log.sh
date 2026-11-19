@@ -26,17 +26,7 @@ if [[ "$1" == workers ]]; then
   export PATH="/opt/codelobby-bin:$PATH"
   sudo mkdir -p /var/local/lib/isolate
   export CODELOBBY_WORKER_RECOVERY=1
-  for slots in /run/codelobby-sandbox-slots /run/codelobby-worker-jobs; do
-  # Preserve occupied markers across worker restarts. Never clear them automatically.
-  if [[ -e "$slots" || -L "$slots" ]]; then
-    [[ -d "$slots" && ! -L "$slots" && $(stat -c %u "$slots") == "$(id -u)" && $(stat -c %a "$slots") == 700 ]] || {
-      echo 'Unsafe sandbox reservation directory' >&2
-      exit 1
-    }
-  else
-    sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$slots"
-  fi
-  done
+  sudo /bin/bash /usr/local/bin/initialize-worker-state.sh
 fi
 if [[ "$1" == workers ]]; then
   sudo mkdir -p /sys/fs/cgroup/codelobby-runner-judge0-v1

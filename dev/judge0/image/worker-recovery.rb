@@ -4,7 +4,7 @@ require "securerandom"
 require "/usr/local/lib/codelobby/sandbox-slots" unless defined?(CodeLobbySandboxSlots)
 
 module CodeLobbyWorkerRecovery
-  ROOT = "/run/codelobby-worker-jobs".freeze
+  ROOT = "/var/lib/codelobby-worker-state/jobs".freeze
   TOKEN = /\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/
   MESSAGE = "Worker interrupted. Sandbox termination and cleanup verified.".freeze
 

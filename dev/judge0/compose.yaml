@@ -32,6 +32,7 @@ services:
       ISOLATE_CGROUP_ROOT: /sys/fs/cgroup/codelobby-runner-judge0-v1
     volumes:
       - ${JUDGE0_CONFIG_FILE:-./judge0.conf}:/judge0.conf:ro
+      - judge0-worker-state:/var/lib/codelobby-worker-state
     privileged: true
     cgroup: host
     restart: unless-stopped
@@ -71,3 +72,4 @@ services:
 
 volumes:
   judge0-data:
+  judge0-worker-state:

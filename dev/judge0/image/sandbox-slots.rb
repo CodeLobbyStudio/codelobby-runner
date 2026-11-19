@@ -1,6 +1,6 @@
 # Process-wide sandbox ownership for the pinned worker. Never remove reservation files.
 module CodeLobbySandboxSlots
-  ROOT = "/run/codelobby-sandbox-slots".freeze
+  ROOT = "/var/lib/codelobby-worker-state/slots".freeze
   SIZE = 1000
 
   class Unavailable < StandardError

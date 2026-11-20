@@ -79,6 +79,13 @@ becomes visible. A replay does not acquire capacity, and queue rejection leaves 
 new job. Reservations preserve FIFO order and include dispatch delay in the
 180-second Submit budget. A reservation may execute once, or be closed before
 execution. Closing running work does not release capacity before it finishes.
+`SubmitRequestValidator` checks identifiers, resource budgets, file manifests and
+suite relationships before the coordinator fingerprints, stores or admits work.
+Run and Submit share these rules. Submit allows public and hidden suites, requires
+public suites before hidden suites, and matches each test file to exactly one
+suite of the same visibility. Only declared EDITABLE files can be overridden.
+Invalid requests do not create jobs, reserve queue capacity or reach the evaluator.
+This structural check does not prove the backend supplied every case of a task.
 `AsyncSubmitCoordinator` dispatches validated payloads through two bounded worker
 threads and updates job states using an injected `EvaluationExecutor`. Duplicate
 submissions are not dispatched again. A deadline covers admission, dispatch and
@@ -90,8 +97,8 @@ until their execution actually returns. Source-list snapshots are immutable.
 The default dispatcher has a 100-task bounded buffer, additionally constrained
 by shared admission and the store's 100-record limit. Completed deadline timers
 are removed rather than retained.
-Full semantic validation, the real public/hidden evaluator, sandbox termination
-integration and HTTP routes remain to be connected before exposing Submit.
+The real public/hidden evaluator, sandbox termination integration and HTTP routes
+remain to be connected before exposing Submit.
 No fake evaluator is registered as a production bean.
 
 

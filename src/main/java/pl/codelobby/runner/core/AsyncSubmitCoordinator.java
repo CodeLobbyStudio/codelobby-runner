@@ -20,6 +20,7 @@ import pl.codelobby.runner.model.TestSuite;
 public final class AsyncSubmitCoordinator implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(AsyncSubmitCoordinator.class.getName());
+    private final SubmitRequestValidator validator = new SubmitRequestValidator();
     private final EvaluationJobStore store;
     private final SubmitAdmission admission;
     private final EvaluationExecutor evaluator;
@@ -48,7 +49,8 @@ public final class AsyncSubmitCoordinator implements AutoCloseable {
 
     /** Registration and dispatch order are serialized to preserve reservation FIFO across Submit callers. */
     public EvaluationJobStore.Registration submit(SubmitRequest request) {
-        var input = snapshot(Objects.requireNonNull(request, "request"));
+        validator.validate(request);
+        var input = snapshot(request);
         synchronized (lifecycle) {
             if (closed) {
                 return store.register(input, () -> { throw new ExecutionUnavailableException(); });

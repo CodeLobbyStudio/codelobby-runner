@@ -97,7 +97,31 @@ until their execution actually returns. Source-list snapshots are immutable.
 The default dispatcher has a 100-task bounded buffer, additionally constrained
 by shared admission and the store's 100-record limit. Completed deadline timers
 are removed rather than retained.
-The real public/hidden evaluator, sandbox termination integration and HTTP routes
+`SourceFileOverlay.applySubmit` validates and applies editable overrides in memory.
+`JavaSuitePlanner.prepareSubmit` selects shared EDITABLE/READ_ONLY sources and only
+the current suite's test files, preserving suite and case order. Hidden test files
+never enter public plans or other hidden suites. Plans are internal immutable
+snapshots, not browser responses. Planning does not compile, execute or benchmark.
+`JavaSuiteArchive.create` remains public-only for Run. Its explicit `createSubmit`
+path accepts one suite's matching public or hidden test role and rejects mixed roles.
+`JavaSubmitSuiteExecutor` submits one such archive, polls its token, reads the
+separate report and returns evaluated cases with external compilation/runtime
+measurements. Hidden case diagnostics are null and raw engine streams are discarded.
+The caller must hold admission capacity and supply remaining aggregate budgets.
+This component is not a complete Submit evaluator or a registered production bean.
+It does not perform benchmarks or prove cleanup after transport failures.
+
+Optional real-engine tests for this stage, after starting local Judge0:
+
+```sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=JavaSubmitSuiteExecutorIntegrationTests test
+```
+
+These run accepted, wrong-answer and compilation-error scenarios separately for
+public and hidden suites. They verify suite execution and hidden-field redaction,
+not shared request budgets, asynchronous job lifecycle or benchmark behavior.
+The request-wide public/hidden evaluator, sandbox termination integration and HTTP routes
 remain to be connected before exposing Submit.
 No fake evaluator is registered as a production bean.
 

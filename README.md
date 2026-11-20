@@ -68,8 +68,9 @@ It returns evaluated results and enforces queue, compilation and runtime limits.
 Judge0 must be started with the bundled adapters. Submit, job polling, capabilities
 and C++/Python Run are not implemented.
 
-Internal Submit models and `InMemoryEvaluationJobStore` are available as building
-blocks, without HTTP routes or execution scheduling. The store retains at most
+Internal Submit models, `InMemoryEvaluationJobStore` and background coordination
+are available as building blocks. They are not wired to HTTP routes or a
+production Submit evaluator. The store retains at most
 100 job snapshots and fingerprints. It deduplicates concurrent identical IDs,
 rejects changed payloads under retained IDs, and removes terminal jobs on the next
 store access at or after 30 minutes from completion. Active jobs are not evicted.
@@ -78,9 +79,20 @@ becomes visible. A replay does not acquire capacity, and queue rejection leaves 
 new job. Reservations preserve FIFO order and include dispatch delay in the
 180-second Submit budget. A reservation may execute once, or be closed before
 execution. Closing running work does not release capacity before it finishes.
-Full validation, bounded asynchronous dispatch, job-state updates and HTTP routes
-remain to be connected before exposing Submit. The dispatcher must fail an
-accepted job if its unused reservation is cancelled, and release its reservation.
+`AsyncSubmitCoordinator` dispatches validated payloads through two bounded worker
+threads and updates job states using an injected `EvaluationExecutor`. Duplicate
+submissions are not dispatched again. A deadline covers admission, dispatch and
+execution. Expired active work is interrupted and new execution is quarantined
+without claiming engine termination. Late results cannot overwrite FAILED.
+Closing the coordinator fails waiting work, initiates stop of active work and
+shuts down its worker and deadline services. Running reservations remain held
+until their execution actually returns. Source-list snapshots are immutable.
+The default dispatcher has a 100-task bounded buffer, additionally constrained
+by shared admission and the store's 100-record limit. Completed deadline timers
+are removed rather than retained.
+Full semantic validation, the real public/hidden evaluator, sandbox termination
+integration and HTTP routes remain to be connected before exposing Submit.
+No fake evaluator is registered as a production bean.
 
 
 The full execution API contract is tracked in issue #5.

@@ -147,6 +147,22 @@ public final class ExecutionQueue {
             }
         }
 
+        /** Monotonic budget, including time before dispatch. */
+        public Duration remainingTime() {
+            return Duration.ofNanos(remainingNanos());
+        }
+
+        /** Stop new work when termination is unconfirmed. Running capacity is not released here. */
+        public void quarantine() {
+            lock.lock();
+            try {
+                quarantined = true;
+                changed.signalAll();
+            } finally {
+                lock.unlock();
+            }
+        }
+
         /** Closing an unused or waiting reservation cancels it. Running work retains capacity. */
         @Override
         public void close() {

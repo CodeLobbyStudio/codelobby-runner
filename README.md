@@ -67,6 +67,15 @@ executes all supplied public test suites through the local Judge0 environment.
 It returns evaluated results and enforces queue, compilation and runtime limits.
 Judge0 must be started with the bundled adapters. Submit, job polling, capabilities
 and C++/Python Run are not implemented.
+
+Internal Submit models and `InMemoryEvaluationJobStore` are available as building
+blocks, without HTTP routes or execution scheduling. The store retains at most
+100 job snapshots and fingerprints. It deduplicates concurrent identical IDs,
+rejects changed payloads under retained IDs, and removes terminal jobs on the next
+store access at or after 30 minutes from completion. Active jobs are not evicted.
+All snapshots and fingerprints are lost on runner restart. Full request validation
+and atomic execution admission must be connected before exposing Submit.
+
 The full execution API contract is tracked in issue #5.
 
 ## Proposed internal API contract

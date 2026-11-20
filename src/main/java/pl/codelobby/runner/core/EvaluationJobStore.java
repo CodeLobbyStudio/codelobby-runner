@@ -8,10 +8,15 @@ import pl.codelobby.runner.model.EvaluationResult;
 import pl.codelobby.runner.model.JobError;
 import pl.codelobby.runner.model.SubmitRequest;
 
-/** Job state storage only. Registration does not admit or schedule an execution. */
+/** Job state storage with an optional atomic admission hook. Does not schedule or execute work. */
 public interface EvaluationJobStore {
 
-    Registration register(SubmitRequest request);
+    default Registration register(SubmitRequest request) {
+        return register(request, () -> { });
+    }
+
+    /** Reserve capacity synchronously before publication. The callback must not schedule or re-enter the store. */
+    Registration register(SubmitRequest request, Runnable beforePublish);
 
     Optional<EvaluationJob> find(String submissionId);
 

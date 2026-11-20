@@ -1,22 +1,26 @@
 package pl.codelobby.runner.core;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.Objects;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
-/**
- * Shared in-memory admission with configurable active and bounded waiting capacity.
- * Callers execute synchronously and must share this instance. No jobs or results are persisted.
- */
+/** Shared process-local admission. Reservations keep FIFO order before execution is dispatched. */
 public final class ExecutionQueue {
 
-    private final Semaphore capacity;
-    private final Semaphore pipeline;
+    private final int activeCapacity;
+    private final int totalCapacity;
+    private final ReentrantLock lock = new ReentrantLock(true);
+    private final Condition changed = lock.newCondition();
+    private final ArrayDeque<Admission> waiting = new ArrayDeque<>();
     private final LongSupplier nanoTime;
-    private volatile boolean quarantined;
+    private int active;
+    private int admitted;
+    private boolean quarantined;
 
     public ExecutionQueue(int pendingCapacity) {
         this(1, pendingCapacity, System::nanoTime);
@@ -35,60 +39,149 @@ public final class ExecutionQueue {
                 || (long) activeCapacity + pendingCapacity > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("Active capacity must be 1 or 2 and total capacity must fit an integer");
         }
-        this.capacity = new Semaphore(activeCapacity + pendingCapacity);
-        this.pipeline = new Semaphore(activeCapacity, true);
+        this.activeCapacity = activeCapacity;
+        this.totalCapacity = activeCapacity + pendingCapacity;
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
     }
 
-    /** The operation receives its remaining budget after waiting for the shared execution slot. */
-    public <T> T execute(Duration timeout, Function<Duration, T> operation) {
-        Objects.requireNonNull(operation, "operation");
+    /** Reserve before publishing an accepted asynchronous job. The owner must execute or close it. */
+    public Admission reserve(Duration timeout) {
         long budget = Objects.requireNonNull(timeout, "timeout").toNanos();
         if (budget <= 0) {
             throw new IllegalArgumentException("Execution timeout must be positive");
         }
-        if (quarantined) {
-            throw new ExecutionUnavailableException();
-        }
-        if (!capacity.tryAcquire()) {
-            throw new RunQueueFullException();
-        }
-        boolean locked = false;
+        lock.lock();
         try {
-            long started = nanoTime.getAsLong();
-            locked = pipeline.tryAcquire(remainingNanos(started, budget), TimeUnit.NANOSECONDS);
-            if (!locked) {
-                throw new RunDeadlineExceededException();
-            }
             if (quarantined) {
                 throw new ExecutionUnavailableException();
             }
-            var timeLeft = Duration.ofNanos(remainingNanos(started, budget));
-            try {
-                return operation.apply(timeLeft);
-            } catch (RequestValidationException exception) {
-                throw exception;
-            } catch (RuntimeException exception) {
-                // Releasing admission does not confirm engine termination or cleanup.
-                quarantined = true;
-                throw exception;
+            if (admitted >= totalCapacity) {
+                throw new RunQueueFullException();
             }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new ExecutionUnavailableException();
+            var admission = new Admission(nanoTime.getAsLong(), budget);
+            waiting.addLast(admission);
+            admitted++;
+            return admission;
         } finally {
-            if (locked) {
-                pipeline.release();
-            }
-            capacity.release();
+            lock.unlock();
         }
     }
 
-    private long remainingNanos(long started, long budget) {
-        long remaining = budget - (nanoTime.getAsLong() - started);
-        if (remaining <= 0) {
-            throw new RunDeadlineExceededException();
+    /** Synchronous callers use the same admission path and remaining operation budget. */
+    public <T> T execute(Duration timeout, Function<Duration, T> operation) {
+        Objects.requireNonNull(operation, "operation");
+        try (var admission = reserve(timeout)) {
+            return admission.execute(operation);
         }
-        return remaining;
+    }
+
+    public final class Admission implements AutoCloseable {
+        private final long started;
+        private final long budget;
+        private final AtomicBoolean used = new AtomicBoolean();
+        private State state = State.RESERVED;
+
+        private Admission(long started, long budget) {
+            this.started = started;
+            this.budget = budget;
+        }
+
+        public <T> T execute(Function<Duration, T> operation) {
+            Objects.requireNonNull(operation, "operation");
+            if (!used.compareAndSet(false, true)) {
+                throw new IllegalStateException("Execution reservation can only be used once");
+            }
+            try {
+                lock.lockInterruptibly();
+                try {
+                    if (state == State.CLOSED) {
+                        throw new IllegalStateException("Execution reservation is closed");
+                    }
+                    state = State.WAITING;
+                    while (true) {
+                        if (quarantined || state == State.CLOSED) {
+                            throw new ExecutionUnavailableException();
+                        }
+                        long remaining = remainingNanos();
+                        if (waiting.peekFirst() == this && active < activeCapacity) {
+                            waiting.removeFirst();
+                            active++;
+                            state = State.RUNNING;
+                            changed.signalAll();
+                            break;
+                        }
+                        changed.awaitNanos(remaining);
+                    }
+                } finally {
+                    lock.unlock();
+                }
+                var timeLeft = Duration.ofNanos(remainingNanos());
+                try {
+                    return operation.apply(timeLeft);
+                } catch (RequestValidationException exception) {
+                    throw exception;
+                } catch (RuntimeException | Error exception) {
+                    lock.lock();
+                    try {
+                        // Admission release is not proof of engine termination or cleanup.
+                        quarantined = true;
+                        changed.signalAll();
+                    } finally {
+                        lock.unlock();
+                    }
+                    throw exception;
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new ExecutionUnavailableException();
+            } finally {
+                lock.lock();
+                try {
+                    if (state == State.RUNNING) {
+                        active--;
+                    }
+                    release();
+                } finally {
+                    lock.unlock();
+                }
+            }
+        }
+
+        /** Closing an unused or waiting reservation cancels it. Running work retains capacity. */
+        @Override
+        public void close() {
+            lock.lock();
+            try {
+                if (state != State.RUNNING) {
+                    release();
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private void release() {
+            if (state != State.CLOSED) {
+                waiting.remove(this);
+                state = State.CLOSED;
+                admitted--;
+                changed.signalAll();
+            }
+        }
+
+        private long remainingNanos() {
+            long remaining = budget - (nanoTime.getAsLong() - started);
+            if (remaining <= 0) {
+                throw new RunDeadlineExceededException();
+            }
+            return remaining;
+        }
+    }
+
+    private enum State {
+        RESERVED,
+        WAITING,
+        RUNNING,
+        CLOSED
     }
 }

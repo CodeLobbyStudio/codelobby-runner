@@ -73,8 +73,15 @@ blocks, without HTTP routes or execution scheduling. The store retains at most
 100 job snapshots and fingerprints. It deduplicates concurrent identical IDs,
 rejects changed payloads under retained IDs, and removes terminal jobs on the next
 store access at or after 30 minutes from completion. Active jobs are not evicted.
-All snapshots and fingerprints are lost on runner restart. Full request validation
-and atomic execution admission must be connected before exposing Submit.
+All snapshots and fingerprints are lost on runner restart. `SubmitAdmission` atomically reserves shared execution capacity before a new job
+becomes visible. A replay does not acquire capacity, and queue rejection leaves no
+new job. Reservations preserve FIFO order and include dispatch delay in the
+180-second Submit budget. A reservation may execute once, or be closed before
+execution. Closing running work does not release capacity before it finishes.
+Full validation, bounded asynchronous dispatch, job-state updates and HTTP routes
+remain to be connected before exposing Submit. The dispatcher must fail an
+accepted job if its unused reservation is cancelled, and release its reservation.
+
 
 The full execution API contract is tracked in issue #5.
 
@@ -341,8 +348,8 @@ COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 
 The application provides one shared `ExecutionQueue` in `core`. Java Run uses it
 for admission, waiting and failure quarantine. Future execution operations must use
-the same instance rather than create independent queues. This is synchronous
-in-memory coordination, not an asynchronous job store.
+the same instance rather than create independent queues. Run uses synchronous waiting. Submit can reserve capacity before asynchronous
+dispatch. Both share this process-local queue and its failure quarantine.
 
 By default, two Runs execute at a time and up to ten wait in FIFO order with the pinned Judge0 1.1.0 image. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full

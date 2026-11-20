@@ -37,7 +37,8 @@ public final class InMemoryEvaluationJobStore implements EvaluationJobStore {
 
     /** Full request validation and ownership of immutable execution payloads belong to the caller. */
     @Override
-    public Registration register(SubmitRequest request) {
+    public Registration register(SubmitRequest request, Runnable beforePublish) {
+        Objects.requireNonNull(beforePublish, "beforePublish");
         Objects.requireNonNull(request, "request");
         validId(request.submissionId());
         validId(request.taskVersionId());
@@ -57,6 +58,7 @@ public final class InMemoryEvaluationJobStore implements EvaluationJobStore {
             }
             var job = new EvaluationJob(request.submissionId(), request.taskVersionId(), CONTRACT_VERSION,
                     JobState.QUEUED, now, null, null, null, null, null);
+            beforePublish.run();
             jobs.put(request.submissionId(), new Entry(fingerprint, job));
             return new Registration(job, true);
         }

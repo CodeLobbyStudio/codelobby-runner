@@ -139,8 +139,30 @@ CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
   ./mvnw -B -ntp -Dtest=JavaSubmitEvaluationRunnerIntegrationTests test
 ```
 
-Benchmarking, final EvaluationResult assembly, asynchronous executor wiring,
-sandbox termination integration and HTTP routes remain before exposing Submit.
+`JavaSubmitBenchmarkRunner` implements the benchmark policy against an injected
+`CompiledJavaSubmission` session. It skips nonaccepted evaluations, executes two
+warmup rounds and five measured rounds, and uses a fresh aggregate execution
+budget for every round within the remaining operation deadline. Only measured
+rounds contribute to median external CPU and maximum observed memory. Incomplete,
+incorrect, out-of-budget or recompiled round results fail without partial metrics.
+The session must match both submissionId and the validated payload fingerprint.
+Uncertain execution failures propagate to the owner rather than implying cleanup.
+The owner retains admission and must close the session after confirmed termination.
+
+This policy is unit-tested with controlled sessions only. There is no production
+artifact-preserving Judge0 session implementation. The current worker removes the
+workspace after a submission, and the report adapter exports diagnostics and
+compiler usage, not class files. Calling the existing evaluation runner seven
+times would recompile and does not meet the benchmark contract. No Docker image,
+Compose configuration or deployed worker behavior was changed for this policy.
+
+The next adapter work must capture bounded immutable compiled artifacts before
+participant execution can alter them, bind them to one request, restore them in
+fresh per-suite sandboxes without invoking javac, and verify cleanup and expiry.
+Artifact contents must remain internal, with no participant-visible transport.
+Until that is implemented and verified, real benchmarking, final EvaluationResult
+assembly, asynchronous executor wiring, sandbox termination integration and HTTP
+routes remain before exposing Submit.
 No fake evaluator is registered as a production bean.
 
 

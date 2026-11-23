@@ -121,8 +121,26 @@ CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
 These run accepted, wrong-answer and compilation-error scenarios separately for
 public and hidden suites. They verify suite execution and hidden-field redaction,
 not shared request budgets, asynchronous job lifecycle or benchmark behavior.
-The request-wide public/hidden evaluator, sandbox termination integration and HTTP routes
-remain to be connected before exposing Submit.
+`JavaSubmitEvaluationRunner` evaluates the complete selected Java manifest in order
+and produces an internal pre-benchmark summary. Compilation shares 10000 ms CPU
+and 20000 ms wall across targets. Runtime CPU and wall budgets are deducted from
+external suite measurements, rounded down before the next suite. Memory caps each
+sandbox and the summary reports the maximum observed peak, not a sum. Exhausted
+budgets prevent further launches and leave remaining cases NOT_RUN. Independent
+targets may continue after a solution failure if budgets remain. One monotonic
+deadline includes validation, preparation and engine communication, using the time
+remaining after admission. Transport failures propagate without resubmission.
+The runner does not reserve capacity or create a terminal job by itself.
+
+Optional whole-manifest execution check against the local engine:
+
+```sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=JavaSubmitEvaluationRunnerIntegrationTests test
+```
+
+Benchmarking, final EvaluationResult assembly, asynchronous executor wiring,
+sandbox termination integration and HTTP routes remain before exposing Submit.
 No fake evaluator is registered as a production bean.
 
 

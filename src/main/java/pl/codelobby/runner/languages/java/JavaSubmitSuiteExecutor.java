@@ -75,7 +75,7 @@ public final class JavaSubmitSuiteExecutor {
         }
         return new Outcome(evaluator.evaluate(suite, engine, report), report.compilation(),
                 executed ? engine.cpuTimeMs() : null, executed ? engine.wallTimeMs() : null,
-                executed ? engine.memoryBytes() : null);
+                executed ? engine.memoryBytes() : null, token);
     }
 
     private Duration remaining(long started, long budget) {
@@ -96,7 +96,12 @@ public final class JavaSubmitSuiteExecutor {
 
     /** Internal accounting data with evaluated cases, without raw engine streams or report content. */
     public record Outcome(SuiteEvaluation evaluation, Judge0CompilationUsage compilation,
-            Double cpuTimeMs, Double wallTimeMs, Long peakMemoryBytes) {
+            Double cpuTimeMs, Double wallTimeMs, Long peakMemoryBytes, Judge0SubmissionToken token) {
+
+        public Outcome(SuiteEvaluation evaluation, Judge0CompilationUsage compilation,
+                Double cpuTimeMs, Double wallTimeMs, Long peakMemoryBytes) {
+            this(evaluation, compilation, cpuTimeMs, wallTimeMs, peakMemoryBytes, null);
+        }
 
         public Outcome {
             Objects.requireNonNull(evaluation, "evaluation");

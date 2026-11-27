@@ -27,7 +27,7 @@ public final class JavaSubmitEvaluationRunner {
 
     private static final Duration DEADLINE = Duration.ofSeconds(180);
     private final SubmitRequestValidator validator = new SubmitRequestValidator();
-    private final JavaSubmitSuiteExecutor executor;
+    private final SuiteOperation executor;
     private final LongSupplier nanoTime;
 
     public JavaSubmitEvaluationRunner(JavaSubmitSuiteExecutor executor) {
@@ -35,12 +35,35 @@ public final class JavaSubmitEvaluationRunner {
     }
 
     JavaSubmitEvaluationRunner(JavaSubmitSuiteExecutor executor, LongSupplier nanoTime) {
+        this((SuiteOperation) Objects.requireNonNull(executor, "executor")::execute, nanoTime);
+    }
+
+    private JavaSubmitEvaluationRunner(SuiteOperation executor, LongSupplier nanoTime) {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
     }
 
+    static JavaSubmitEvaluationRunner rounds(SuiteOperation executor, LongSupplier nanoTime) {
+        return new JavaSubmitEvaluationRunner(executor, nanoTime);
+    }
+
+    @FunctionalInterface
+    interface SuiteOperation {
+        JavaSubmitSuiteExecutor.Outcome execute(SubmitRequest request, int index, ExecutionLimits limits,
+                int buildCpu, int buildWall, Duration left);
+    }
+
+    @FunctionalInterface
+    interface SuiteObserver {
+        void evaluated(int index, JavaSubmitSuiteExecutor.Outcome outcome, Duration left);
+    }
+
     /** Admission supplies time remaining after queue waiting. Evaluation never resets it per suite. */
     public Summary evaluate(SubmitRequest request, Duration timeLeft) {
+        return evaluate(request, timeLeft, (index, outcome, left) -> {});
+    }
+
+    Summary evaluate(SubmitRequest request, Duration timeLeft, SuiteObserver observer) {
         if (timeLeft == null || timeLeft.isZero() || timeLeft.isNegative()) {
             throw new RunDeadlineExceededException();
         }
@@ -82,6 +105,8 @@ public final class JavaSubmitEvaluationRunner {
                     remaining(started, budget));
             remaining(started, budget);
             validateOutcome(suite, outcome);
+            observer.evaluated(index, outcome, remaining(started, budget));
+            remaining(started, budget);
             buildCpu += outcome.compilation().cpuTimeMs();
             buildWall += outcome.compilation().wallTimeMs();
             results.addAll(outcome.evaluation().testResults());

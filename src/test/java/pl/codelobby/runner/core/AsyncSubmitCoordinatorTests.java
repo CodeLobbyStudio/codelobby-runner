@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import pl.codelobby.runner.model.EvaluationJob;
 import pl.codelobby.runner.model.EvaluationResult;
 import pl.codelobby.runner.model.JobState;
@@ -202,6 +204,24 @@ class AsyncSubmitCoordinatorTests {
         time.set(Duration.ofSeconds(180).toNanos());
         release.countDown();
         assertThat(awaitState("job", JobState.FAILED).error().code()).isEqualTo("REQUEST_DEADLINE_EXCEEDED");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"179, EXECUTION_INFRASTRUCTURE_ERROR", "180, REQUEST_DEADLINE_EXCEEDED"})
+    void classifiesExecutorFailureByAdmissionBudgetEvenBeforeTheTimerFires(int elapsedSeconds, String code)
+            throws Exception {
+        coordinator = create((input, budget) -> {
+            time.set(Duration.ofSeconds(elapsedSeconds).toNanos());
+            throw new IllegalStateException("private transport failure");
+        });
+        coordinator.submit(request("job"));
+        var failed = awaitState("job", JobState.FAILED);
+        assertThat(failed.error().code()).isEqualTo(code);
+        assertThat(failed.error().retryable()).isTrue();
+        assertThat(failed.result()).isNull();
+        assertThat(failed.error().message()).doesNotContain("private transport failure");
+        assertThatThrownBy(() -> queue.reserve(Duration.ofSeconds(60)))
+                .isInstanceOf(ExecutionUnavailableException.class);
     }
 
     @Test

@@ -144,14 +144,20 @@ public final class AsyncSubmitCoordinator implements AutoCloseable {
                 });
             } catch (RuntimeException | Error failure) {
                 JobError error;
-                if (failure instanceof RunDeadlineExceededException) {
+                try {
+                    // A transport failure can race the deadline timer. Use the admission budget as authority.
+                    reservation.remainingTime();
+                    if (failure instanceof RunDeadlineExceededException) {
+                        error = deadlineError();
+                    } else if (failure instanceof ExecutionUnavailableException) {
+                        error = unavailableError();
+                    } else if (failure instanceof RequestValidationException validation) {
+                        error = new JobError(validation.code().name(), "Invalid evaluation request.", false);
+                    } else {
+                        error = infrastructureError();
+                    }
+                } catch (RunDeadlineExceededException expired) {
                     error = deadlineError();
-                } else if (failure instanceof ExecutionUnavailableException) {
-                    error = unavailableError();
-                } else if (failure instanceof RequestValidationException validation) {
-                    error = new JobError(validation.code().name(), "Invalid evaluation request.", false);
-                } else {
-                    error = infrastructureError();
                 }
                 fail(error, false);
                 if (failure instanceof Error severe) {

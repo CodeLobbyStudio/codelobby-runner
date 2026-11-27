@@ -239,3 +239,39 @@ single Judge0 worker process execute two programs simultaneously. Deployment
 configuration must align the intended active concurrency with worker `COUNT`.
 This is a local functional check, not a load test or Linux/Windows certification.
 See [the probe instructions](../dev/judge0/README.md#optional-real-run-and-submit-concurrency-probe).
+
+
+### Submit failure and recovery verification
+
+On 2026-11-27 two real HTTP failure/recovery probes passed locally on Apple
+Silicon with the experimental artifact overlay. Each waited for a populated
+sandbox cgroup before killing a Judge0 service. API server loss produced
+FAILED/EXECUTION_INFRASTRUCTURE_ERROR. Worker loss reached the real 180-second
+Submit deadline and produced FAILED/REQUEST_DEADLINE_EXCEEDED. The probe-only
+Judge0 result timeout was 200 seconds so a shorter per-token timeout would not
+mask the global deadline. Deployment timeout settings were not changed.
+
+Both cases verified null results, retryable errors, failure of pending work without
+starting it, terminal replay, HTTP 503 for new Run and Submit requests, and no
+stored job for rejected work. Engine restart alone did not remove runner
+quarantine. After verified cleanup and a fresh runner instance, a new Submit
+finished with WRONG_ANSWER and a subsequent Run returned ACCEPTED. The old
+in-memory job disappeared on runner restart as documented. Cleanup checks covered
+sandbox cgroups, journals, occupied slot markers and workspace mounts.
+
+The first deadline probe exposed a classification race: a transport failure could
+publish the generic infrastructure error after the admission budget expired but
+before the timer reported its deadline. The coordinator now checks that budget
+when classifying a failure. Regression tests distinguish failure before expiry
+from failure at expiry without firing the timer. Both real probes passed after
+this fix. The test HTTP client also waits long enough for the existing 60-second
+Run budget. These changes do not claim that interruption proves engine termination.
+
+After verification the normal engine configuration was restored, containers were
+stopped and the temporary artifact key was removed. The private configuration and
+persistent database/worker-state volumes were retained. See
+[the opt-in failure probes](../dev/judge0/README.md#optional-real-submit-failure-and-recovery-probes).
+
+The final `./mvnw -B -ntp clean verify` run passed 814 tests with 20 optional
+tests skipped and no failures or errors. The two destructive integration scenarios
+were executed separately with `CODELOBBY_TEST_SUBMIT_FAILURES=true`.

@@ -395,3 +395,35 @@ public outputs, redacted hidden feedback, successful accepted benchmarking, repl
 cleanup of cgroups/journals/reservations/workspace mounts and a subsequent Run.
 The observer requires Docker CLI access and the Compose project used above.
 Do not run this global worker inspection alongside unrelated sandbox work.
+
+
+## Optional real Submit failure and recovery probes
+
+These probes deliberately kill the local Judge0 API server or worker container.
+Use only the otherwise idle Compose environment from this directory with the
+experimental artifact overlay running and `CODELOBBY_ARTIFACT_KEY` exported.
+Do not use this test against shared or deployed infrastructure. From the repository
+root:
+
+```sh
+CODELOBBY_TEST_SUBMIT_FAILURES=true \
+  ./mvnw -B -ntp -Dtest=SubmitFailureIntegrationTests test
+```
+
+The test starts real temporary runner applications with one active and one pending
+slot. It waits for a populated sandbox cgroup before killing the selected service.
+API loss must produce a safe FAILED job. Worker loss exercises the real 180-second
+Submit deadline without a simulated clock. The test-only Judge0 result timeout is
+200 seconds so the ordinary per-token polling timeout does not mask this deadline.
+Deployment timeout settings are unchanged. Allow several minutes for this test.
+
+Checks include null partial results, retryable job errors, failure of queued work
+without starting it, idempotent terminal replay, rejection of new Run and Submit
+work while admission is quarantined, and verified cleanup after engine recovery.
+The same runner remains quarantined after Judge0 restarts. After verified engine
+cleanup, the test restarts the runner and verifies a fresh Submit and Run. It also
+checks that restarting the runner loses its in-memory job history, which the backend
+must persist independently. The test restores the overlay services in a finally
+block and does not delete database or worker-state volumes. It leaves the overlay
+running for inspection. Restore the normal configuration and stop services after
+local verification.

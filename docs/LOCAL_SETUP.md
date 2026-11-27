@@ -100,8 +100,9 @@ From the repository root:
 
 The script checks basic engine requirements, downloads the pinned image if absent,
 generates private `dev/judge0/judge0.conf` once, and applies both Compose files.
-Existing passwords and database volumes are preserved. The report/compiler adapters
-required by Java Run are included automatically. Credentials are never printed.
+Existing passwords and database volumes are preserved. Packaged adapters required
+by Java Run and Submit are included automatically. A separate private artifact key
+is generated once next to the configuration file. Credentials are never printed.
 
 Open `http://127.0.0.1:2359/about`. To verify actual engine execution:
 
@@ -119,16 +120,26 @@ If startup fails, read the generic error and check engine mode, cgroup support, 
 space/memory and mount permissions. Do not print or share resolved Compose configuration
 because it contains passwords. Do not delete the database volume as a troubleshooting step.
 
-## 3. Build and start the runner
+## 3. Start the runner with Run and Submit
 
 From the repository root:
 
 ```sh
-./mvnw -B -ntp clean verify
-export CODELOBBY_INTERNAL_KEY="$(openssl rand -hex 32)"
-export JUDGE0_URL="http://127.0.0.1:2359"
-./mvnw spring-boot:run
+./dev/start-runner.sh
 ```
+
+This also ensures Judge0 is running. It loads the engine artifact key from
+`dev/judge0/judge0.conf.artifact-key` and enables Submit. For backend authentication,
+it preserves `CODELOBBY_INTERNAL_KEY` if provided, otherwise generates and reuses
+`dev/runner-internal.key`. These files use private permissions and remain outside Git.
+The script prints the internal key file's location, never its contents. Configure
+the backend with that internal key through its protected configuration. Do not copy
+the artifact key into the backend or either key into the frontend.
+
+`RUNNER_INTERNAL_KEY_FILE` overrides the internal key file. `JUDGE0_CONFIG_FILE`
+and `JUDGE0_ARTIFACT_KEY_FILE` select the engine configuration and artifact key file.
+Keep custom secret files outside version control. Existing files are preserved.
+Ctrl+C stops the foreground runner. Use `./dev/judge0/stop.sh` to stop the engine.
 
 Keep this terminal running. Give the backend the same internal key through its protected
 configuration, never through the browser or Git. The runner does not automatically read
@@ -172,13 +183,10 @@ Start again with `./dev/judge0/start.sh`. The database and original secrets rema
 Use the same `JUDGE0_CONFIG_FILE` and `COMPOSE_PROJECT_NAME` if you set custom values.
 For another Judge0 port, set `JUDGE0_PORT` for startup and match `JUDGE0_URL` in the runner.
 
-After pulling changes to mounted adapters, wait for active work to finish and recreate
-server/workers from `dev/judge0`. For the default private configuration:
-
-```sh
-docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml \
-  up -d --force-recreate --wait server workers
-```
+After an image version update, drain all work, stop the runner and use
+`./dev/judge0/start.sh` to apply the pinned packaged image. Pulling local adapter
+source changes alone does not update files inside an existing image. Source
+adapter overlays are for development and are documented in dev/judge0/README.md.
 
 A plain container restart does not apply new mount definitions. If a failed Run quarantines
 the pipeline, recover Judge0 workers, verify execution, then restart the runner. Run only
@@ -195,14 +203,10 @@ or emulation problems explicitly rather than marking the platform verified from 
 
 ## Optional Java Submit
 
-The normal setup above enables Java Run. Java Submit also needs the experimental
-artifact overlay and a separate runner artifact key. Follow
-[the optional Submit HTTP instructions](../README.md#optional-internal-java-submit-http-api)
-and [the overlay setup](../dev/judge0/README.md#experimental-compiled-java-artifact-capture).
-The published image and default startup remain unchanged. Do not enable Submit
-against an engine without that overlay. The backend uses the same internal key
+The standard packaged image and `./dev/start-runner.sh` now enable both Java Run
+and Submit without source-code overlays. The backend uses the same internal key
 for POST `/internal/v1/evaluation-jobs` and GET of the returned `Location`.
-Neither internal nor artifact keys belong in browser requests.
+The following records describe earlier verification stages and their configurations.
 
 Local Submit HTTP verification on 2026-11-24 used Apple Silicon and the experimental
 artifact overlay. Three real scenarios passed: accepted with a successful benchmark,
@@ -275,3 +279,87 @@ persistent database/worker-state volumes were retained. See
 The final `./mvnw -B -ntp clean verify` run passed 814 tests with 20 optional
 tests skipped and no failures or errors. The two destructive integration scenarios
 were executed separately with `CODELOBBY_TEST_SUBMIT_FAILURES=true`.
+
+
+### Packaged Submit image verification
+
+On 2026-11-27 a local `codelobby-judge0:submit-candidate` image was built from the
+pinned published 1.1.0 runtime using the `submit-runtime` Dockerfile target.
+Its observed local image ID was
+`sha256:7dcfc922c8af4599257f4220ccc4558ef821410559cda9a097f950ad05345b6d`.
+It is not a published release or a registry download reference. Toolchains were
+reused from the pinned runtime rather than rebuilt in this verification.
+
+The candidate started with `compose.yaml` plus `compose.submit.yaml`, without the
+Run source overlay or experimental artifact source overlay. Container inspection
+confirmed the candidate image on both services and only the private read-only
+`judge0.conf` bind mount. The worker-state volume was preserved. All eight packaged
+adapter files matched repository SHA-256 values. The image user remained `judge0`
+and no artifact key was present in the image's environment configuration.
+
+Java 21 with heap allocation, Python 3.12 and C++17 smoke executions passed. Forty
+Ruby adapter tests ran against files inside the image with no failures. Local
+Python environment regressions passed 22 tests with 18 optional tests skipped.
+Four real HTTP cases passed: accepted Submit with benchmarking, wrong-answer
+Submit, compilation-error Submit, and the mixed Run/Submit concurrency scenario.
+The latter verified populated sandbox cgroups, pending admission, overflow,
+separate results, benchmarking, cleanup and a subsequent Run.
+
+This packaging check did not repeat destructive recovery probes, which currently
+restore their own source-overlay profile. It does not establish a cold installation
+or portability to other hosts. See
+[the packaged candidate instructions](../dev/judge0/README.md#packaged-java-submit-image-candidate).
+
+The final runner build passed 814 tests with 20 optional tests skipped and no
+failures or errors. Rollback recreated both services from the pinned published
+1.1.0 image, with Java 21, Python 3.12 and C++17 smoke checks passing again.
+Containers were then stopped and the temporary artifact key removed. Private
+configuration and persistent volumes were retained. The local candidate image
+remains available in Docker. No image was published and no Java code changed.
+
+
+### 1.2.0 release startup preparation
+
+The local 1.2.0 build contains the same packaged adapters verified above, with
+release metadata updated. Startup now prepares a separate private artifact key,
+uses the packaged Compose profile and mounts no source adapters. The new
+`dev/start-runner.sh` starts Judge0 and the runner with Submit enabled, loading
+that artifact key and either a provided backend internal key or a generated
+private internal key file. Existing secrets are reused and not printed.
+
+Local verification on 2026-11-27 passed 25 Python environment tests with 18 optional
+tests skipped, including private key generation/reuse, invalid/symlink rejection,
+custom configuration paths and preservation of a provided internal key. Shell
+syntax checks passed. A real one-command startup on port 18081 passed authenticated
+Run and asynchronous Submit with polling and hidden-feedback redaction. The full
+runner build passed 814 tests with 20 optional tests skipped. The foreground test
+runner and engine were stopped. Its temporary backend key was removed and the
+persistent private artifact key preserved.
+
+Registry publication of 1.2.0 subsequently completed. Anonymous manifest access
+and Docker pull with an empty authentication configuration both succeeded. The
+verified published digest is
+`sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641`.
+Local layers were cached, so this was not a cold installation test. No credentials
+were written into the image or repository.
+
+
+### Published 1.2.0 verification
+
+The published digest above was fetched with an empty Docker authentication
+configuration, using existing local layer caches. A fresh foreground runner on
+port 18081 was then started through `dev/start-runner.sh`, using the published
+pinned image on both engine services. Inspection confirmed no source-code adapter
+bind mounts. Four real authenticated HTTP scenarios passed: accepted Run,
+accepted Submit with five measured benchmark rounds, wrong-answer Submit and
+compilation-error Submit. Submit probes checked polling, hidden diagnostic
+redaction, active/terminal replay and changed-payload conflict responses.
+
+The explicit `compose.previous.yaml` rollback started the preserved 1.1.0 image
+with Run adapters. Java 21, Python 3.12 and C++17 engine smoke checks passed.
+Normal startup then returned to 1.2.0 and all three smoke checks passed again.
+The runner and engine were stopped, the temporary backend test key removed and
+the persistent artifact key preserved with private permissions. Neither private
+configuration nor database/worker-state volumes were removed. No Java code or
+language toolchains changed in this rollout. Cross-platform runtime certification
+and a cold installation on another machine remain unverified.

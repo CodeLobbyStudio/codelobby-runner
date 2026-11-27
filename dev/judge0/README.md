@@ -1,12 +1,13 @@
 # Local Judge0 development environment
 
-Owned by codelobby-runner. The default Compose configuration uses the prebuilt image `ghcr.io/ptrthdr/codelobby-judge0:1.1.0` on the maintainer's personal GitHub Container Registry account. The image is independent of the organization repository. Its immutable manifest digest is pinned in `compose.yaml` and `start.sh`.
+Owned by codelobby-runner. The default Compose configuration uses the prebuilt image `ghcr.io/ptrthdr/codelobby-judge0:1.2.0` on the maintainer's personal GitHub Container Registry account. The image is independent of the organization repository. Its immutable manifest digest is pinned in `compose.yaml` and `start.sh`.
 
 The image provides Java 21, Python 3.12 and C++17, including the local workspace, OOM and compilation-budget adapters. Normal startup downloads it automatically. No image archive or local image build is required.
 
 This is a local development and MVP demonstration environment. The Java Run endpoint uses
 this environment through the runner's HTTP client. Start the runner separately with its
-internal key. Java Submit is opt-in with the experimental artifact overlay below.
+internal key. From the repository root, `./dev/start-runner.sh` starts the engine and runner with Run
+and Java Submit using separate private keys. Direct JVM startup keeps Submit opt-in.
 C++/Python Run are not implemented.
 
 See [local setup for macOS, Linux and Windows/WSL2](../../docs/LOCAL_SETUP.md) for the full
@@ -27,7 +28,9 @@ The script checks that the engine runs Linux containers with cgroup v2 and is no
 These checks do not prove all controller/mount permissions or sandbox behavior on a new host.
 It downloads the pinned image if missing, verifies its registry manifest digest through Docker,
 and creates private `judge0.conf` with three independent random secrets if the file is absent.
-Both `compose.yaml` and `compose.reports.yaml` are applied automatically. Existing configuration is preserved. PostgreSQL and Redis are pinned by digest. Readiness checks wait for the database, Redis and HTTP API.
+A separate artifact transport key is created in `judge0.conf.artifact-key` and reused.
+Both `compose.yaml` and `compose.submit.yaml` are applied automatically, without
+mounting source adapters. Existing configuration is preserved. PostgreSQL and Redis are pinned by digest. Readiness checks wait for the database, Redis and HTTP API.
 
 Open `http://127.0.0.1:2359/about` and `/languages`. HTTP availability alone does not verify sandbox execution. If Python 3 is installed on the host, run:
 
@@ -58,7 +61,8 @@ JUDGE0_PORT=2360 ./start.sh
 
 ## Local suite-report adapters
 
-`./start.sh` includes the overlay required by Java Run. After changing adapter files or
+The packaged image includes these adapters. The following source overlay remains
+available for adapter development, not normal startup. After changing adapter files or
 mount definitions, wait for active work to finish, then recreate the server and workers.
 For the default private configuration, run from this directory:
 
@@ -84,7 +88,7 @@ report evaluation and request-level result aggregation. Evaluation and compilati
 request-wide budgets. Communications use the remaining portion of the 60-second Run deadline.
 Compiler diagnostics are omitted from the aggregate response because they can include host
 test source. The default Spring configuration connects this executor to POST /internal/v1/runs.
-By default, the HTTP adapter admits two active Runs and ten pending Runs with the pinned 1.1.0 image and fresh `COUNT=2` configuration. If an infrastructure
+By default, the HTTP adapter admits two active Runs and ten pending Runs with the pinned 1.2.0 image and fresh `COUNT=2` configuration. If an infrastructure
 failure leaves execution or cleanup unconfirmed, admission stays quarantined.
 Recover locally by stopping or restarting Judge0 workers, verifying readiness,
 and restarting Runner.
@@ -148,7 +152,7 @@ A separate local recovery image was verified on 2026-11-19 on Apple Silicon. All
 
 A separate persistent-state image was verified on 2026-11-19 on Apple Silicon. The worker was killed during an active Python sandbox and its container was deleted. A read-only check of the surviving named volume confirmed the pending journal and occupied reservation before a replacement worker existed. The replacement had a different container ID and mounted the same state volume. It reconciled the interrupted submission to `Internal Error`, released slot 0 after verified cleanup, and successfully executed subsequent Python and Java programs using that slot. Linux initialization tests cover fresh volume ownership, repeat initialization without data loss, unsafe permissions, wrong owners and symlinks.
 
-The pinned public image 1.1.0 includes these adapters. Fresh startup uses `COUNT=2` and the runner defaults to `RUNNER_EXECUTION_MAX_ACTIVE=2`. Preserve existing private secrets while updating older execution settings. Version 1.0.0 remains available, but does not support this two-process configuration. The current stage supports one or two active operations, with bounded pending capacity, within one runner and one worker container. More processes, replicas and multi-instance queue ownership are outside this verification.
+Image 1.1.0 introduced these adapters, which are retained in 1.2.0. Fresh startup uses `COUNT=2` and the runner defaults to `RUNNER_EXECUTION_MAX_ACTIVE=2`. Preserve existing private secrets while updating older execution settings. Version 1.0.0 remains available, but does not support this two-process configuration. The current stage supports one or two active operations, with bounded pending capacity, within one runner and one worker container. More processes, replicas and multi-instance queue ownership are outside this verification.
 
 Local concurrency verification on 2026-11-19 used a separate two-process image, API port and runner. Two HTTP Run requests were observed in distinct populated sandbox cgroups at the same time. Accepted and Wrong Answer results remained associated with the correct requests and outputs. One pending request started automatically and an excess request received HTTP 429. A compilation error did not cancel another execution. Killing and deleting the worker container during two active Python executions preserved both journals on the state volume. The replacement worker reconciled both submissions to Internal Error, released both slots and successfully executed subsequent programs. The worker boot wrapper now runs recovery once in a dedicated Rails runner before starting the scheduler and Resque processes. Runtime Rails processes do not repeat recovery. A regression test also covers the initial shared-directory creation race found during the first concurrent trial. These are local functional checks, not capacity or cross-platform certification.
 
@@ -209,7 +213,8 @@ classes, supports class-only replay and supplies an explicit Java session for
 all benchmark rounds. It is disabled by default. The runner can register the real
 Submit service and HTTP routes with `RUNNER_SUBMIT_ENABLED=true` and
 `RUNNER_JUDGE0_ARTIFACT_KEY` set to the overlay's `CODELOBBY_ARTIFACT_KEY`.
-The published image and default startup configuration remain unchanged.
+The source overlay is retained for adapter development. Normal 1.2.0 startup
+already includes these adapters and does not use this overlay.
 
 After starting the normal local environment, enable the extra worker overlay from
 this directory, with no active executions. Generate a separate temporary private
@@ -357,7 +362,8 @@ This runs real asynchronous jobs for accepted, wrong-answer and compilation-erro
 solutions. It also injects missing artifacts after verified cleanup, and missing
 cleanup confirmation. The former produces a FINISHED/ACCEPTED result with failed
 benchmark. The latter produces FAILED with no result and quarantines the runner
-queue. Identical submissions are not executed twice. The published image is unchanged.
+queue. Identical submissions are not executed twice. These earlier probes used
+source overlays rather than changing the published image.
 
 The optional Submit HTTP routes are documented in the root README. To test them
 against this overlay, run the following from the repository root with the artifact
@@ -368,7 +374,7 @@ CODELOBBY_TEST_SUBMIT_HTTP=true \
   ./mvnw -B -ntp -Dtest=SubmitEndpointIntegrationTests test
 ```
 
-Image packaging and further real expiry/concurrency verification remain separate work.
+Packaged 1.2.0 startup is described below. Further real expiry verification remains separate work.
 
 
 ## Optional real Run and Submit concurrency probe
@@ -427,3 +433,106 @@ must persist independently. The test restores the overlay services in a finally
 block and does not delete database or worker-state volumes. It leaves the overlay
 running for inspection. Restore the normal configuration and stop services after
 local verification.
+
+
+## Packaged Java Submit image candidate
+
+The `submit-runtime` Dockerfile target includes the Run report adapters, compiled
+Java artifact capture, private artifact endpoint and cleanup receipts. It needs no
+source-code bind mounts. Capture is still opt-in through
+`CODELOBBY_CAPTURE_JAVA_ARTIFACTS=true`, and the server requires the separate private
+artifact key. No key is built into the image. The 1.2.0 release uses this packaged target for normal startup. The candidate
+procedure below remains available for local development.
+
+For a local adapter-only build, reuse the verified pinned 1.1.0 runtime rather
+than rebuilding JDK/Python. From this directory:
+
+```sh
+docker build --platform linux/amd64 \
+  --build-arg CODELOBBY_RUNTIME_BASE=ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08 \
+  --target submit-runtime -t codelobby-judge0:submit-candidate .
+```
+
+Without that build argument, the default build uses the `runtime-base` stage and
+builds the toolchains from the checked vendor archives as before. The fast path
+only packages adapters onto the pinned runtime and does not upgrade compilers.
+`submit-candidate` is a local development tag, not a published release reference.
+
+Use an idle local environment with existing private `judge0.conf` and preserved
+database/worker-state volumes. If the private configuration does not exist, first
+run `./start.sh` to initialize it. Ensure worker `COUNT` matches intended runner
+concurrency. In the same terminal:
+
+```sh
+export CODELOBBY_SUBMIT_IMAGE=codelobby-judge0:submit-candidate
+export CODELOBBY_ARTIFACT_KEY="$(openssl rand -hex 32)"
+docker compose --env-file judge0.conf -f compose.yaml -f compose.submit.yaml \
+  up -d --wait --wait-timeout 180
+export RUNNER_SUBMIT_ENABLED=true
+export RUNNER_JUDGE0_ARTIFACT_KEY="$CODELOBBY_ARTIFACT_KEY"
+```
+
+Then start the runner with its normal internal key and Judge0 URL settings. Keep
+the artifact key private and available for runner restarts while the engine uses
+it. Do not combine this packaged profile with `compose.reports.yaml` or
+`compose.artifacts.experimental.yaml`, since those source overlays would hide the
+files being verified inside the image. The new Compose file only selects the
+image and private feature settings. It mounts no source files.
+
+For real HTTP verification, run from the repository root with the artifact key
+still exported:
+
+```sh
+CODELOBBY_TEST_SUBMIT_HTTP=true CODELOBBY_TEST_MIXED_HTTP=true \
+  ./mvnw -B -ntp -Dtest=SubmitEndpointIntegrationTests,RunSubmitConcurrencyIntegrationTests test
+```
+
+The existing failure-recovery probe currently restores its experimental overlay
+during recovery and is not a packaged-image probe. Run it separately using its
+documented environment. To return from the candidate to the published image, drain
+all work, then from this directory run:
+
+```sh
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml \
+  up -d --wait --wait-timeout 180 server workers
+./stop.sh
+```
+
+This recreates the services from the existing pinned image and preserves volumes.
+Do not remove volumes to switch images. Normal startup uses the pinned 1.2.0 release. To deliberately roll back to 1.1.0,
+use an explicit override with its recorded pinned digest. Do not rely on the
+current compose.yaml selecting an older image.
+
+
+## Packaged 1.2.0 startup and private keys
+
+Normal startup selects the pinned 1.2.0 image with built-in adapters using
+`compose.yaml` and `compose.submit.yaml`. No source-code overlay is applied.
+`./start.sh` creates or reuses a private artifact key next to the selected config
+file (`judge0.conf.artifact-key` by default), validates it and provides it only to
+the engine API service. Keep this file private. Stop preserves all configuration,
+keys and volumes and does not require loading the artifact key.
+
+From the repository root, `./dev/start-runner.sh` starts Judge0 and the runner
+with Submit enabled. It loads the same artifact key and either preserves an
+explicit `CODELOBBY_INTERNAL_KEY` or generates `dev/runner-internal.key` once.
+Configure the backend with the internal key only. The artifact key is not needed
+by the backend. No key belongs in frontend code or browser requests. Generated
+keys use 0600 permissions and are ignored by Git, including temporary key files.
+Invalid keys or symlinks fail without replacing their contents. Existing database
+passwords are not regenerated. Custom secret paths must remain outside Git.
+
+Ctrl+C stops the foreground runner. `./dev/judge0/stop.sh` stops engine services.
+A host without Java can start only the engine with `./dev/judge0/start.sh`, but
+running the JVM runner requires JDK 21. WSL2 Linux is the supported Windows path.
+
+For an explicit rollback to the preserved 1.1.0 Run-only setup, drain all work,
+stop the runner and run from this directory:
+
+```sh
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml \
+  -f compose.previous.yaml up -d --wait --wait-timeout 180 server workers
+```
+
+The next normal `./start.sh` returns to 1.2.0. Do not enable Submit against this
+older Run-only profile. Neither rollback nor normal startup removes volumes.

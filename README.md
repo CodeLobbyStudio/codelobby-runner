@@ -54,7 +54,9 @@ for merge is a separate repository setting.
 The optional [Judge0 development environment](dev/judge0/README.md) downloads a
 prebuilt image with Java 21, Python 3.12 and C++17 from the maintainer's personal
 container registry. Start it with `./dev/judge0/start.sh` after starting Docker.
-The script includes the adapters required by Java Run. Judge0 uses localhost port
+The script includes packaged adapters for Java Run and Submit. For the engine and
+runner together, use `./dev/start-runner.sh`. It preserves separate private keys
+without printing them. Judge0 uses localhost port
 2359 and is separate from the runner application on port 8081.
 Follow the [local setup guide](docs/LOCAL_SETUP.md) for macOS, Linux or Windows with WSL2.
 The guide distinguishes configured environments from those actually verified.
@@ -66,8 +68,8 @@ parsing, validation and safe error responses. Authenticated Java Run compiles an
 executes all supplied public test suites through the local Judge0 environment.
 It returns evaluated results and enforces queue, compilation and runtime limits.
 Judge0 must be started with the bundled adapters. Java Submit and job polling are
-available through opt-in internal HTTP routes with the experimental artifact
-overlay described below. Capabilities and C++/Python Run are not implemented.
+available through opt-in internal HTTP routes with the packaged image.
+`./dev/start-runner.sh` enables both for local use. Capabilities and C++/Python Run are not implemented.
 
 Internal Submit models, `InMemoryEvaluationJobStore` and background coordination
 are wired to the real Java evaluator when `runner.submit.enabled=true`.
@@ -190,29 +192,32 @@ Receipt transport failure does not certify process termination or release capaci
 Spring registers the real executor, private artifact transport and coordinator
 only when Submit is enabled. They share the Run execution queue. Tests cover real
 FINISHED results, stored replay without reexecution, and FAILED jobs with
-quarantined capacity after uncertain infrastructure failures. Deployment/image
-packaging and further real expiry/concurrency verification remain separate work.
+quarantined capacity after uncertain infrastructure failures. Further real expiry verification and deployment on additional hosts remain
+separate work.
 No fake evaluator is registered as a production bean.
 
 
 ### Optional internal Java Submit HTTP API
 
-Submit currently requires the experimental artifact overlay in
-[dev/judge0/README.md](dev/judge0/README.md#experimental-compiled-java-artifact-capture).
-The published Judge0 image alone does not enable the artifact endpoints.
-Enable the overlay first, with no active work. In the runner terminal, configure:
+The packaged Judge0 image includes the artifact transport and cleanup adapters.
+From the repository root, start Docker and run:
 
 ```sh
-export RUNNER_SUBMIT_ENABLED=true
-export RUNNER_JUDGE0_ARTIFACT_KEY="$CODELOBBY_ARTIFACT_KEY"
+./dev/start-runner.sh
 ```
 
-`CODELOBBY_ARTIFACT_KEY` must contain the same private value used for the Judge0
-overlay. It is separate from `CODELOBBY_INTERNAL_KEY`, which authenticates the
-backend to the runner. Never give either key to the frontend. Use the existing
-Run startup settings for the runner port, Judge0 URL and internal key.
-Missing or invalid artifact configuration prevents an enabled Submit service from
-starting. With Submit disabled, authenticated valid Submit requests return 503.
+The script starts Judge0, loads or creates the artifact key next to its private
+configuration (`dev/judge0/judge0.conf.artifact-key` by default), enables Submit
+and starts the runner. It preserves an explicitly provided `CODELOBBY_INTERNAL_KEY`.
+Otherwise it creates `dev/runner-internal.key` once. Both key files are private,
+ignored by Git and reused on later starts. Give the backend only the internal key
+through protected configuration. The backend does not need the artifact key.
+Neither key belongs in frontend code or browser payloads.
+
+Manual runner startup remains supported with `RUNNER_SUBMIT_ENABLED=true`,
+`RUNNER_JUDGE0_ARTIFACT_KEY` set to the engine's private artifact key and the
+usual `CODELOBBY_INTERNAL_KEY` and Judge0 URL settings. The JVM does not read these
+key files automatically. With Submit disabled, authenticated valid requests return 503.
 
 From the repository root, using the runner's actual port (8081 by default):
 
@@ -245,9 +250,11 @@ shared capacity or storage returns 429 with `Retry-After: 1`. GET never starts
 execution. The backend must persist final results and filter participant feedback
 before sending it to the frontend. Runner job memory is lost on restart.
 
-To verify the real HTTP flow against the experimental overlay:
+To verify the real HTTP flow against the running engine, export
+`CODELOBBY_ARTIFACT_KEY` from its private artifact key file first:
 
 ```sh
+export CODELOBBY_ARTIFACT_KEY="$(cat dev/judge0/judge0.conf.artifact-key)"
 CODELOBBY_TEST_SUBMIT_HTTP=true \
   ./mvnw -B -ntp -Dtest=SubmitEndpointIntegrationTests test
 ```
@@ -525,7 +532,7 @@ for admission, waiting and failure quarantine. Future execution operations must 
 the same instance rather than create independent queues. Run uses synchronous waiting. Submit can reserve capacity before asynchronous
 dispatch. Both share this process-local queue and its failure quarantine.
 
-By default, two Runs execute at a time and up to ten wait in FIFO order with the pinned Judge0 1.1.0 image. The 60-second deadline
+By default, two Runs execute at a time and up to ten wait in FIFO order with the pinned Judge0 1.2.0 image. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full
 queue returns 429 QUEUE_CAPACITY_EXCEEDED. Engine unavailability returns
 503 EXECUTION_UNAVAILABLE. An operation or engine communication timeout returns
@@ -548,7 +555,7 @@ out-of-range and unknown `runner.execution` settings prevent startup.
 This range prevents invalid semaphore capacity and is not a verified deployment
 sizing recommendation. A larger queue does not increase throughput or the number
 of active executions. Waiting still counts towards the 60-second Run deadline.
-Choose capacity using measured execution times and available resources. Judge0 image 1.1.0 supports two processes in one worker container. Fresh configuration defaults to `COUNT=2` and `RUNNER_EXECUTION_MAX_ACTIVE=2`. Existing private `judge0.conf` files are preserved, so update their `COUNT` setting to `2` before using the default two-slot runner. For serial operation, explicitly set both limits to `1`. A communication failure still quarantines new work globally, while operations already active are allowed to finish. Do not start multiple worker containers or multiple runner instances with this local-only queue. The supported active limit is currently `1` or `2`.
+Choose capacity using measured execution times and available resources. Judge0 image 1.2.0 supports two processes in one worker container. Fresh configuration defaults to `COUNT=2` and `RUNNER_EXECUTION_MAX_ACTIVE=2`. Existing private `judge0.conf` files are preserved, so update their `COUNT` setting to `2` before using the default two-slot runner. For serial operation, explicitly set both limits to `1`. A communication failure still quarantines new work globally, while operations already active are allowed to finish. Do not start multiple worker containers or multiple runner instances with this local-only queue. The supported active limit is currently `1` or `2`.
 
 An unconfirmed execution or cleanup failure quarantines the pipeline. Further Runs
 receive 503. To recover locally, stop or restart the Judge0 workers and verify

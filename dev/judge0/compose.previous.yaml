@@ -1,0 +1,6 @@
+# Explicit Run-only rollback. Combine with compose.yaml and compose.reports.yaml after draining work.
+services:
+  server:
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
+  workers:
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08

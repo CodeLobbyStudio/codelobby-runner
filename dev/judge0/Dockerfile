@@ -1,3 +1,6 @@
+# Use runtime-base for a complete build, or a verified pinned CodeLobby runtime for adapter-only packaging.
+ARG CODELOBBY_RUNTIME_BASE=runtime-base
+
 FROM mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2 AS toolchains
 USER root
 COPY vendor /tmp/vendor
@@ -11,7 +14,7 @@ RUN cd /tmp/vendor && sha256sum -c checksums.txt && \
     /usr/local/codelobby/python3.12/bin/python3.12 -c 'import ssl, sqlite3, bz2, lzma, ctypes; import sys; print(sys.version)' && \
     /usr/local/codelobby/jdk21/bin/java -XX:+UseSerialGC -XX:ActiveProcessorCount=1 -Xmx64m -version
 
-FROM mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2
+FROM mrkushalsm/judge0@sha256:d60605ad448453ac3754629bc7121d379cf691e0c091aabbc03ff2886b2626b2 AS runtime-base
 USER root
 COPY --from=toolchains /usr/local/codelobby /usr/local/codelobby
 COPY image/modern-languages.rb /api/db/languages/codelobby_modern.rb
@@ -28,5 +31,21 @@ RUN printf '\nrequire_relative "codelobby_modern"\n' >> /api/db/languages/active
         /usr/local/bin/reset-compile-cgroup.sh /usr/local/bin/java-with-budget.sh /opt/codelobby-bin/isolate
 LABEL org.opencontainers.image.title="CodeLobby Judge0 local development" \
       org.opencontainers.image.version="1.1.0"
+USER judge0
+CMD ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]
+
+
+FROM ${CODELOBBY_RUNTIME_BASE} AS submit-runtime
+USER root
+COPY image/suite-report.rb /api/config/initializers/codelobby_suite_report.rb
+COPY image/java-artifact-capture.rb /api/config/initializers/zzzz_codelobby_java_artifact_capture.rb
+COPY image/java-artifact-endpoint.rb /api/config/initializers/codelobby_java_artifact_endpoint.rb
+COPY image/java-artifacts.rb /usr/local/lib/codelobby/java-artifacts.rb
+COPY image/compilation-budget.rb /api/config/initializers/zz_codelobby_compilation_budget.rb
+COPY image/read-suite-report.rb image/java-with-budget.sh /usr/local/bin/
+COPY image/isolate-with-workspace.sh /opt/codelobby-bin/isolate
+RUN chmod 0755 /usr/local/bin/read-suite-report.rb /usr/local/bin/java-with-budget.sh /opt/codelobby-bin/isolate
+LABEL org.opencontainers.image.title="CodeLobby Judge0 with Java Submit" \
+      org.opencontainers.image.version="1.2.0"
 USER judge0
 CMD ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]

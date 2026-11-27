@@ -2,7 +2,7 @@
 # Start the prebuilt local environment. Secrets are generated once and never printed.
 set -euo pipefail
 cd "$(dirname "$0")"
-image=ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
+image=ghcr.io/ptrthdr/codelobby-judge0@sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     echo 'Run this script inside a WSL2 Linux distribution, not Git Bash or PowerShell.' >&2
@@ -48,7 +48,14 @@ awk -F= '
   /^(POSTGRES_PASSWORD|REDIS_PASSWORD|SECRET_KEY_BASE)=/ { if (length($2) < 32) exit 1; seen[$1]++ }
   END { if (length(seen) != 3) exit 1 }
 ' "$config" || { echo 'Private judge0.conf is incomplete. Restore its original secrets.' >&2; exit 1; }
-docker compose --env-file "$config" -f compose.yaml -f compose.reports.yaml up -d --wait --wait-timeout 180
+key_file=${JUDGE0_ARTIFACT_KEY_FILE:-${config}.artifact-key}
+[[ "$key_file" == /* ]] || key_file=$PWD/$key_file
+. ./private-key.sh
+codelobby_load_private_key "$key_file"
+export CODELOBBY_ARTIFACT_KEY=$CODELOBBY_LOADED_KEY
+unset CODELOBBY_LOADED_KEY
+export CODELOBBY_SUBMIT_IMAGE=$image
+docker compose --env-file "$config" -f compose.yaml -f compose.submit.yaml up -d --wait --wait-timeout 180
 echo "Judge0 HTTP API is ready: http://127.0.0.1:${JUDGE0_PORT:-2359}"
-echo 'Java Run adapters are included. HTTP readiness alone does not verify execution.'
+echo 'Packaged Run and Java Submit adapters are enabled. HTTP readiness alone does not verify execution.'
 echo 'Check /languages and run python3 smoke-test.py for an engine execution check.'

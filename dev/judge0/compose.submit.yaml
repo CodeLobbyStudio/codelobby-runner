@@ -1,0 +1,10 @@
+# Packaged Submit adapters. Combine with compose.yaml, without source-code overlays.
+services:
+  server:
+    image: ${CODELOBBY_SUBMIT_IMAGE:-ghcr.io/ptrthdr/codelobby-judge0@sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641}
+    environment:
+      CODELOBBY_ARTIFACT_KEY: ${CODELOBBY_ARTIFACT_KEY:?Set the private artifact transport key}
+  workers:
+    image: ${CODELOBBY_SUBMIT_IMAGE:-ghcr.io/ptrthdr/codelobby-judge0@sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641}
+    environment:
+      CODELOBBY_CAPTURE_JAVA_ARTIFACTS: 'true'

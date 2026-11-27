@@ -1,7 +1,7 @@
 name: codelobby-runner-modern
 services:
   server:
-    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641
     pull_policy: missing
     platform: linux/amd64
     command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "server"]
@@ -24,7 +24,7 @@ services:
         condition: service_healthy
 
   workers:
-    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:acacbcc9c2cb525396c8048ccff9f8aa390264abd949466391a64a8bfa6fad08
+    image: ghcr.io/ptrthdr/codelobby-judge0@sha256:949f9e34c0797c3c4b5036f024e7ce9b02932b6f64b337391b5d6369f737b641
     pull_policy: missing
     platform: linux/amd64
     command: ["/bin/bash", "/usr/local/bin/start-without-env-log.sh", "workers"]

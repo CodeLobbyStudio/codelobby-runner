@@ -9,8 +9,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import pl.codelobby.runner.model.FileType;
+import pl.codelobby.runner.model.TestVisibility;
 
-/** Creates the in-memory Judge0 multi-file payload for one validated public Java suite. */
+/** Creates the in-memory Judge0 multi-file payload for one validated Java suite. */
 public final class JavaSuiteArchive {
 
     private static final Pattern SOURCE_PATH =
@@ -40,6 +41,20 @@ public final class JavaSuiteArchive {
     }
 
     public byte[] create(JavaSuitePlan plan, int compilationCpuMs, int compilationWallMs) {
+        return create(plan, compilationCpuMs, compilationWallMs, FileType.VISIBLE_TEST);
+    }
+
+    /** Explicit Submit path keeps hidden sources out of the public Run archive API. */
+    public byte[] createSubmit(JavaSuitePlan plan, TestVisibility visibility,
+            int compilationCpuMs, int compilationWallMs) {
+        if (visibility == null) {
+            throw new IllegalArgumentException("Suite visibility is required");
+        }
+        return create(plan, compilationCpuMs, compilationWallMs,
+                visibility == TestVisibility.PUBLIC ? FileType.VISIBLE_TEST : FileType.HIDDEN_TEST);
+    }
+
+    private byte[] create(JavaSuitePlan plan, int compilationCpuMs, int compilationWallMs, FileType testType) {
         if (compilationCpuMs < 1 || compilationCpuMs > 10_000
                 || compilationWallMs < 1 || compilationWallMs > 20_000) {
             throw new IllegalArgumentException("Invalid Java compilation budget");
@@ -54,12 +69,14 @@ public final class JavaSuiteArchive {
         int hostCount = 0;
         try (var zip = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
             for (var file : plan.files()) {
-                if (!SOURCE_PATH.matcher(file.path()).matches() || file.type() == FileType.HIDDEN_TEST) {
+                if (!SOURCE_PATH.matcher(file.path()).matches()
+                        || (file.type() != FileType.EDITABLE && file.type() != FileType.READ_ONLY
+                            && file.type() != testType)) {
                     throw new IllegalArgumentException("Invalid Java suite archive source");
                 }
                 String entry = "sources/" + file.path();
                 writeEntry(zip, entry, file.content());
-                if (file.type() == FileType.VISIBLE_TEST) {
+                if (file.type() == testType) {
                     hostSources.append("    '").append(entry).append("'\n");
                     hostCount++;
                 } else {

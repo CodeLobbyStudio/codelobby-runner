@@ -57,6 +57,10 @@ module CodeLobbySuiteReport
       @codelobby_build_limits = header.split.map { |value| Integer(value, 10) } if result.success?
     end
     outcome = super
+    if outcome == :success && submission.is_project && @codelobby_compilation_started == false && @codelobby_build_usage.nil?
+      # The trusted phase wrapper observed no compiler invocation. Do not infer this from the report.
+      @codelobby_build_usage = {cpuTimeMs: 0.0, wallTimeMs: 0.0}
+    end
     store_suite_report(state: "MISSING") if outcome == :failure
     outcome
   end

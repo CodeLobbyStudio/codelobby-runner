@@ -6,7 +6,8 @@ The image provides Java 21, Python 3.12 and C++17, including the local workspace
 
 This is a local development and MVP demonstration environment. The Java Run endpoint uses
 this environment through the runner's HTTP client. Start the runner separately with its
-internal key. Submit and C++/Python Run are not implemented.
+internal key. Java Submit is opt-in with the experimental artifact overlay below.
+C++/Python Run are not implemented.
 
 See [local setup for macOS, Linux and Windows/WSL2](../../docs/LOCAL_SETUP.md) for the full
 start-to-Run procedure, requirements and verification status.
@@ -200,3 +201,229 @@ docker compose --env-file judge0.conf -f compose.legacy.yaml stop
 ```
 
 Its original image has Java 13 and Python 3.8 and does not meet the modern contract baseline. Existing legacy containers and their database are preserved during the modern migration.
+
+## Experimental compiled Java artifact capture
+
+This is a local, opt-in prototype used by Java Submit benchmarks. It captures
+classes, supports class-only replay and supplies an explicit Java session for
+all benchmark rounds. It is disabled by default. The runner can register the real
+Submit service and HTTP routes with `RUNNER_SUBMIT_ENABLED=true` and
+`RUNNER_JUDGE0_ARTIFACT_KEY` set to the overlay's `CODELOBBY_ARTIFACT_KEY`.
+The published image and default startup configuration remain unchanged.
+
+After starting the normal local environment, enable the extra worker overlay from
+this directory, with no active executions. Generate a separate temporary private
+transport key in this terminal and keep it out of Git and browser payloads:
+
+```sh
+export CODELOBBY_ARTIFACT_KEY="$(openssl rand -hex 32)"
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml \
+  -f compose.artifacts.experimental.yaml up -d --wait server workers
+```
+
+The optional initializer captures after successful project compilation and before
+participant execution. The helper requires the compiler cgroup to be empty. It
+pins directories by file descriptors, rejects symlinks and hardlinked files, and
+reads only bounded regular class files from .codelobby/classes on the same device.
+It checks the class-file magic header, not full JVM validity. Paths must be ASCII.
+Limits are 256 files, 512 visited entries, 240 path bytes, 256 KiB per class,
+1 MiB combined class bytes and 1,500,000 serialized snapshot bytes. Snapshots are
+versioned JSON with sorted relative class paths and Base64 bytes. SHA-256 covers
+the serialized snapshot. Runtime writes cannot change the captured copy.
+
+The worker stores snapshots under its submission token in a separate private Redis
+namespace, codelobby:java-artifacts:prototype:v1:, for 300 seconds. At most 32
+records are retained. Older records may be evicted, so this is not yet an artifact
+store suitable for every allowed multi-suite request or deployment load. Failures,
+missing classes and size breaches do not replace the original solution verdict.
+The experimental server overlay adds private GET/DELETE endpoints at
+/codelobby/v1/java-artifacts/{token}. Both require X-CodeLobby-Artifact-Key,
+matching CODELOBBY_ARTIFACT_KEY. Missing or invalid configuration fails closed.
+Responses use no-store. Only the runner gets the key, execution tokens and classes.
+Do not expose this listener publicly. Use protected service transport when moving
+beyond the loopback-only local configuration.
+
+Run the controlled real-engine probes from the repository root:
+
+```sh
+CODELOBBY_TEST_JAVA_ARTIFACTS=true \
+  python3 dev/judge0/tests/java_artifacts_integration_test.py
+```
+
+The probes check pre-runtime snapshots despite runtime class mutation, compilation
+failure, oversized artifacts, link handling and Redis capacity/expiry policy.
+The Linux collector tests separately require rejection of accessible symbolic
+links, hardlinks, FIFO, invalid names and oversized trees. In the pinned engine,
+a compile-created symbolic link can already be absent before capture and runtime.
+The integration probe then requires a valid snapshot without that entry and
+confirms the link is absent during execution.
+
+Disable the experiment by recreating the worker with only the normal files,
+with no active work, then stop the local environment if it is no longer needed:
+
+```sh
+docker compose --env-file judge0.conf -f compose.yaml -f compose.reports.yaml \
+  up -d --wait server workers
+./stop.sh
+unset CODELOBBY_ARTIFACT_KEY
+```
+
+### Class-only replay in fresh sandboxes
+
+The runner's JavaCompiledArtifacts reader verifies the private snapshot digest,
+strict UTF-8/JSON structure, unique safe paths, class magic and capture-compatible
+size/count bounds. It rejects unknown fields, duplicate JSON keys and noncanonical
+Base64. SHA-256 verifies integrity only, not authorization or request ownership.
+The Java session binds private retrieval to tokens returned by its own evaluation,
+and checks the selected request fingerprint before the benchmark is run.
+
+JavaCompiledSuiteArchive writes only .codelobby/classes entries and a generated
+run script. It includes no compile/compile.sh script, Java source or compiler driver.
+Judge0 therefore skips its compiler phase and extracts the same class bytes into
+each fresh sandbox. The trusted phase adapter reports zero compiler usage only
+when no compiler was invoked. An actual compiler with missing measurements is
+never treated as zero. Replay does not capture another copy into the artifact cache.
+
+With the experimental overlay already running, verify from the repository root:
+
+```sh
+CODELOBBY_TEST_JAVA_ARTIFACTS=true \
+  ./mvnw -B -ntp -Dtest=JavaCompiledSuiteArchiveIntegrationTests test
+```
+
+For each public/hidden suite the test compiles once, captures the original classes,
+and replays the class-only archive twice. The test program modifies a class and
+writes local state during every run. Each replay must start from the original
+classes and lack the previous runtime state. Compiler usage must be zero and
+hidden case diagnostics must remain redacted. Snapshot retrieval in this test uses
+the maintainer's local Docker CLI only and is not production runner transport.
+
+### Full compiled session and benchmark
+
+Judge0CompiledJavaSubmission owns immutable copies of the selected request and
+replay archives. Initial suite outcomes carry private execution tokens to an
+observer. Successful captures are validated and copied immediately, then deleted
+from Redis, reducing retention across larger suite sets. The session's aggregate
+class-data ceiling is 8 MiB. Captures are not fetched again during benchmark rounds.
+If a capture cannot be used, benchmarking fails without altering evaluation.
+The caller holds admission throughout, closes the session, and handles uncertain
+termination before releasing or quarantining capacity. Closing the Java session
+releases class archive references and never claims to terminate an active sandbox.
+
+With the overlay running and the same CODELOBBY_ARTIFACT_KEY in this terminal,
+run from the repository root:
+
+```sh
+CODELOBBY_TEST_COMPILED_SESSION=true \
+  ./mvnw -B -ntp -Dtest=Judge0CompiledJavaSubmissionIntegrationTests test
+```
+
+This verifies accepted evaluation with two warmups and five measured rounds across
+public/hidden suites, wrong-answer benchmark skipping, and controlled artifact
+unavailability. All application retrieval uses authenticated HTTP, not Docker CLI.
+Remote records are deleted and hidden case diagnostics remain redacted.
+
+### Verified cleanup and final asynchronous results
+
+The optional worker also publishes a cleanup receipt after a previously held
+bounded-workspace lease has been released and verified. Failed cleanup, a retained
+lease or a job that never held a lease cannot publish success. Receipts use a
+separate bounded Redis namespace, the same 300-second retention and 32-record cap.
+The private GET /codelobby/v1/java-artifacts/{token}/cleanup route returns PENDING
+or CLEANED_UP. It requires the artifact key and no response contains source paths.
+Deleting a token also removes its receipt and both index entries.
+
+The session waits for this receipt after each initial suite and replay. This is
+required even after compilation errors because Judge0 can persist their terminal
+status before cleanup completes. Missing or invalid confirmation throws an
+infrastructure failure. The owner must quarantine uncertain execution capacity.
+Interrupted waits propagate. No endpoint claims that an HTTP timeout killed a job.
+
+JavaSubmitEvaluationExecutor assembles the final EvaluationResult after evaluation,
+benchmark and session close. The initial solution verdict and measurements remain
+separate from benchmark results. A verified benchmark failure preserves ACCEPTED.
+Solution failures skip benchmarking. SubmitConfiguration connects this executor
+to AsyncSubmitCoordinator and the shared execution queue when explicitly enabled.
+
+With the experimental overlay running and CODELOBBY_ARTIFACT_KEY available, run
+from the repository root:
+
+```sh
+CODELOBBY_TEST_SUBMIT_EXECUTOR=true \
+  ./mvnw -B -ntp -Dtest=JavaSubmitEvaluationExecutorIntegrationTests test
+```
+
+This runs real asynchronous jobs for accepted, wrong-answer and compilation-error
+solutions. It also injects missing artifacts after verified cleanup, and missing
+cleanup confirmation. The former produces a FINISHED/ACCEPTED result with failed
+benchmark. The latter produces FAILED with no result and quarantines the runner
+queue. Identical submissions are not executed twice. The published image is unchanged.
+
+The optional Submit HTTP routes are documented in the root README. To test them
+against this overlay, run the following from the repository root with the artifact
+key exported:
+
+```sh
+CODELOBBY_TEST_SUBMIT_HTTP=true \
+  ./mvnw -B -ntp -Dtest=SubmitEndpointIntegrationTests test
+```
+
+Image packaging and further real expiry/concurrency verification remain separate work.
+
+
+## Optional real Run and Submit concurrency probe
+
+Start the experimental artifact overlay above in an otherwise idle local Compose
+environment. The mounted private Judge0 configuration must contain `COUNT=2`.
+Existing `judge0.conf` files are preserved by startup and may still contain
+`COUNT=1`, which serializes engine work even if the runner admits two operations.
+The probe checks this setting before accepting work. Keep `CODELOBBY_ARTIFACT_KEY`
+exported with the same value as the server overlay. From the repository root:
+
+```sh
+CODELOBBY_TEST_MIXED_HTTP=true \
+  ./mvnw -B -ntp -Dtest=RunSubmitConcurrencyIntegrationTests test
+```
+
+This test starts a temporary real runner with two active slots and one pending
+slot. The pending limit is specific to this test and does not change deployment
+settings. It starts two different Submit jobs, queues a Run, checks HTTP 429 for
+an excess job and verifies that duplicate Submit requests do not consume more
+capacity. Read-only Docker observers check populated sandbox cgroups during the
+two Submits and later during Run plus Submit. Assertions verify separate verdicts,
+public outputs, redacted hidden feedback, successful accepted benchmarking, replay,
+cleanup of cgroups/journals/reservations/workspace mounts and a subsequent Run.
+The observer requires Docker CLI access and the Compose project used above.
+Do not run this global worker inspection alongside unrelated sandbox work.
+
+
+## Optional real Submit failure and recovery probes
+
+These probes deliberately kill the local Judge0 API server or worker container.
+Use only the otherwise idle Compose environment from this directory with the
+experimental artifact overlay running and `CODELOBBY_ARTIFACT_KEY` exported.
+Do not use this test against shared or deployed infrastructure. From the repository
+root:
+
+```sh
+CODELOBBY_TEST_SUBMIT_FAILURES=true \
+  ./mvnw -B -ntp -Dtest=SubmitFailureIntegrationTests test
+```
+
+The test starts real temporary runner applications with one active and one pending
+slot. It waits for a populated sandbox cgroup before killing the selected service.
+API loss must produce a safe FAILED job. Worker loss exercises the real 180-second
+Submit deadline without a simulated clock. The test-only Judge0 result timeout is
+200 seconds so the ordinary per-token polling timeout does not mask this deadline.
+Deployment timeout settings are unchanged. Allow several minutes for this test.
+
+Checks include null partial results, retryable job errors, failure of queued work
+without starting it, idempotent terminal replay, rejection of new Run and Submit
+work while admission is quarantined, and verified cleanup after engine recovery.
+The same runner remains quarantined after Judge0 restarts. After verified engine
+cleanup, the test restarts the runner and verifies a fresh Submit and Run. It also
+checks that restarting the runner loses its in-memory job history, which the backend
+must persist independently. The test restores the overlay services in a finally
+block and does not delete database or worker-state volumes. It leaves the overlay
+running for inspection. Restore the normal configuration and stop services after
+local verification.

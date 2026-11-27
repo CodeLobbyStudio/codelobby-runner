@@ -65,8 +65,198 @@ The service provides HTTP health and `POST /internal/v1/runs`, strict request
 parsing, validation and safe error responses. Authenticated Java Run compiles and
 executes all supplied public test suites through the local Judge0 environment.
 It returns evaluated results and enforces queue, compilation and runtime limits.
-Judge0 must be started with the bundled adapters. Submit, job polling, capabilities
-and C++/Python Run are not implemented.
+Judge0 must be started with the bundled adapters. Java Submit and job polling are
+available through opt-in internal HTTP routes with the experimental artifact
+overlay described below. Capabilities and C++/Python Run are not implemented.
+
+Internal Submit models, `InMemoryEvaluationJobStore` and background coordination
+are wired to the real Java evaluator when `runner.submit.enabled=true`.
+Submit is disabled by default and needs the separate artifact transport key.
+The store retains at most
+100 job snapshots and fingerprints. It deduplicates concurrent identical IDs,
+rejects changed payloads under retained IDs, and removes terminal jobs on the next
+store access at or after 30 minutes from completion. Active jobs are not evicted.
+All snapshots and fingerprints are lost on runner restart. `SubmitAdmission` atomically reserves shared execution capacity before a new job
+becomes visible. A replay does not acquire capacity, and queue rejection leaves no
+new job. Reservations preserve FIFO order and include dispatch delay in the
+180-second Submit budget. A reservation may execute once, or be closed before
+execution. Closing running work does not release capacity before it finishes.
+`SubmitRequestValidator` checks identifiers, resource budgets, file manifests and
+suite relationships before the coordinator fingerprints, stores or admits work.
+Run and Submit share these rules. Submit allows public and hidden suites, requires
+public suites before hidden suites, and matches each test file to exactly one
+suite of the same visibility. Only declared EDITABLE files can be overridden.
+Invalid requests do not create jobs, reserve queue capacity or reach the evaluator.
+This structural check does not prove the backend supplied every case of a task.
+`AsyncSubmitCoordinator` dispatches validated payloads through two bounded worker
+threads and updates job states using an injected `EvaluationExecutor`. Duplicate
+submissions are not dispatched again. A deadline covers admission, dispatch and
+execution. Expired active work is interrupted and new execution is quarantined
+without claiming engine termination. Late results cannot overwrite FAILED.
+Closing the coordinator fails waiting work, initiates stop of active work and
+shuts down its worker and deadline services. Running reservations remain held
+until their execution actually returns. Source-list snapshots are immutable.
+The default dispatcher has a 100-task bounded buffer, additionally constrained
+by shared admission and the store's 100-record limit. Completed deadline timers
+are removed rather than retained.
+`SourceFileOverlay.applySubmit` validates and applies editable overrides in memory.
+`JavaSuitePlanner.prepareSubmit` selects shared EDITABLE/READ_ONLY sources and only
+the current suite's test files, preserving suite and case order. Hidden test files
+never enter public plans or other hidden suites. Plans are internal immutable
+snapshots, not browser responses. Planning does not compile, execute or benchmark.
+`JavaSuiteArchive.create` remains public-only for Run. Its explicit `createSubmit`
+path accepts one suite's matching public or hidden test role and rejects mixed roles.
+`JavaSubmitSuiteExecutor` submits one such archive, polls its token, reads the
+separate report and returns evaluated cases with external compilation/runtime
+measurements. Hidden case diagnostics are null and raw engine streams are discarded.
+The caller must hold admission capacity and supply remaining aggregate budgets.
+This component is not a complete Submit evaluator or a registered production bean.
+It does not perform benchmarks or prove cleanup after transport failures.
+
+Optional real-engine tests for this stage, after starting local Judge0:
+
+```sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=JavaSubmitSuiteExecutorIntegrationTests test
+```
+
+These run accepted, wrong-answer and compilation-error scenarios separately for
+public and hidden suites. They verify suite execution and hidden-field redaction,
+not shared request budgets, asynchronous job lifecycle or benchmark behavior.
+`JavaSubmitEvaluationRunner` evaluates the complete selected Java manifest in order
+and produces an internal pre-benchmark summary. Compilation shares 10000 ms CPU
+and 20000 ms wall across targets. Runtime CPU and wall budgets are deducted from
+external suite measurements, rounded down before the next suite. Memory caps each
+sandbox and the summary reports the maximum observed peak, not a sum. Exhausted
+budgets prevent further launches and leave remaining cases NOT_RUN. Independent
+targets may continue after a solution failure if budgets remain. One monotonic
+deadline includes validation, preparation and engine communication, using the time
+remaining after admission. Transport failures propagate without resubmission.
+The runner does not reserve capacity or create a terminal job by itself.
+
+Optional whole-manifest execution check against the local engine:
+
+```sh
+CODELOBBY_TEST_LOCAL_JUDGE0=true CODELOBBY_TEST_JUDGE0_REPORTS=true \
+  ./mvnw -B -ntp -Dtest=JavaSubmitEvaluationRunnerIntegrationTests test
+```
+
+`JavaSubmitBenchmarkRunner` implements the benchmark policy against an injected
+`CompiledJavaSubmission` session. It skips nonaccepted evaluations, executes two
+warmup rounds and five measured rounds, and uses a fresh aggregate execution
+budget for every round within the remaining operation deadline. Only measured
+rounds contribute to median external CPU and maximum observed memory. Incomplete,
+incorrect, out-of-budget or recompiled round results fail without partial metrics.
+The session must match both submissionId and the validated payload fingerprint.
+Uncertain execution failures propagate to the owner rather than implying cleanup.
+The owner retains admission and must close the session after confirmed termination.
+
+`Judge0CompiledJavaSubmission` connects the initial evaluation and artifact-only
+rounds using the optional private Judge0 adapter. It freezes the selected request,
+binds the session to submissionId and its payload fingerprint, fetches captures
+after terminal suite execution, and deletes the remote records. It retains at most
+8 MiB of decoded class data across the request, represented by private replay
+archives. Missing, oversized or corrupt captures prevent benchmarking without
+changing the earlier solution verdict. Failed cache deletion falls back to the
+bounded adapter TTL. The session permits at most seven rounds and close releases
+its archive references. Unknown execution termination propagates and blocks reuse.
+
+`HttpJudge0ArtifactStore` uses authenticated bounded HTTP GET/DELETE, no redirects
+or proxies, and a separate private artifact key. It reuses the engine transport's
+bounded response and timeout handling. Artifact contents are never part of the
+participant API. No Docker CLI is invoked by application code. The default image,
+startup and Run configuration remain unchanged. The optional
+[artifact adapter](dev/judge0/README.md#experimental-compiled-java-artifact-capture)
+is required for these sessions and is not enabled by default.
+
+`JavaCompiledArtifacts` verifies snapshot structure, size, paths and SHA-256.
+`JavaCompiledSuiteArchive` restores immutable classes through class-only archives,
+without source or compiler scripts. Every round uses fresh per-suite sandboxes,
+fresh aggregate execution limits and the operation's remaining monotonic deadline.
+
+`JavaSubmitEvaluationExecutor` implements EvaluationExecutor using the real session
+and benchmark runner. It assembles EvaluationResult only after the session closes,
+keeps evaluation measurements separate from benchmark metrics, returns skipped
+benchmarks for solution failures, and preserves ACCEPTED on a verified benchmark
+failure. Compiler and message diagnostics remain null. One caller-supplied deadline
+covers session opening, evaluation, benchmarking and close.
+
+The optional worker publishes a private cleanup receipt only after the bounded
+workspace lease has been verified released. The session waits for this receipt for
+each initial suite and replay, including compilation failures whose terminal status
+can precede cleanup. Missing confirmation fails closed, without a partial result.
+Receipt transport failure does not certify process termination or release capacity.
+
+Spring registers the real executor, private artifact transport and coordinator
+only when Submit is enabled. They share the Run execution queue. Tests cover real
+FINISHED results, stored replay without reexecution, and FAILED jobs with
+quarantined capacity after uncertain infrastructure failures. Deployment/image
+packaging and further real expiry/concurrency verification remain separate work.
+No fake evaluator is registered as a production bean.
+
+
+### Optional internal Java Submit HTTP API
+
+Submit currently requires the experimental artifact overlay in
+[dev/judge0/README.md](dev/judge0/README.md#experimental-compiled-java-artifact-capture).
+The published Judge0 image alone does not enable the artifact endpoints.
+Enable the overlay first, with no active work. In the runner terminal, configure:
+
+```sh
+export RUNNER_SUBMIT_ENABLED=true
+export RUNNER_JUDGE0_ARTIFACT_KEY="$CODELOBBY_ARTIFACT_KEY"
+```
+
+`CODELOBBY_ARTIFACT_KEY` must contain the same private value used for the Judge0
+overlay. It is separate from `CODELOBBY_INTERNAL_KEY`, which authenticates the
+backend to the runner. Never give either key to the frontend. Use the existing
+Run startup settings for the runner port, Judge0 URL and internal key.
+Missing or invalid artifact configuration prevents an enabled Submit service from
+starting. With Submit disabled, authenticated valid Submit requests return 503.
+
+From the repository root, using the runner's actual port (8081 by default):
+
+```sh
+curl -sS -i -X POST http://127.0.0.1:8081/internal/v1/evaluation-jobs \
+  -H 'Content-Type: application/json' \
+  -H "X-CodeLobby-Internal-Key: $CODELOBBY_INTERNAL_KEY" \
+  --data-binary @docs/api/examples/submit-request.json
+```
+
+A new job returns 202 and a relative `Location` header. Poll that location with
+GET and the same internal header, for example:
+
+```sh
+curl -sS http://127.0.0.1:8081/internal/v1/evaluation-jobs/submission-001 \
+  -H "X-CodeLobby-Internal-Key: $CODELOBBY_INTERNAL_KEY"
+```
+
+Replace `submission-001` with the ID from your request or use the returned location.
+Active jobs contain no partial result. FINISHED
+contains the complete evaluation and benchmark outcome. FAILED contains a safe
+job error. Solution errors normally finish with an unsuccessful verdict, rather
+than becoming infrastructure failures.
+
+The backend saves `submissionId` and the complete authoritative public/hidden
+payload before POST. Reposting the same payload returns the existing job, with
+202 while active or 200 when terminal. Changing a retained ID's payload returns
+409. Use a new ID for a new attempt. Unknown or expired jobs return 404. Full
+shared capacity or storage returns 429 with `Retry-After: 1`. GET never starts
+execution. The backend must persist final results and filter participant feedback
+before sending it to the frontend. Runner job memory is lost on restart.
+
+To verify the real HTTP flow against the experimental overlay:
+
+```sh
+CODELOBBY_TEST_SUBMIT_HTTP=true \
+  ./mvnw -B -ntp -Dtest=SubmitEndpointIntegrationTests test
+```
+
+Keep `CODELOBBY_ARTIFACT_KEY` exported for this optional test. It starts a temporary
+runner on a random port and exercises accepted, wrong-answer and compilation-error
+jobs, polling, replay and conflict responses. It does not publish an image.
+
+
 The full execution API contract is tracked in issue #5.
 
 ## Proposed internal API contract
@@ -332,8 +522,8 @@ COMPILATION_ERROR and TIME_LIMIT_EXCEEDED also use HTTP 200.
 
 The application provides one shared `ExecutionQueue` in `core`. Java Run uses it
 for admission, waiting and failure quarantine. Future execution operations must use
-the same instance rather than create independent queues. This is synchronous
-in-memory coordination, not an asynchronous job store.
+the same instance rather than create independent queues. Run uses synchronous waiting. Submit can reserve capacity before asynchronous
+dispatch. Both share this process-local queue and its failure quarantine.
 
 By default, two Runs execute at a time and up to ten wait in FIFO order with the pinned Judge0 1.1.0 image. The 60-second deadline
 includes queue waiting, compilation, evaluation and engine communication. A full

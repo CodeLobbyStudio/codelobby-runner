@@ -228,7 +228,7 @@ public final class HttpJudge0Client implements Judge0Client {
         }
     }
 
-    private JsonNode exchange(HttpRequest request, int expectedStatus, int maxBytes,
+    JsonNode exchange(HttpRequest request, int expectedStatus, int maxBytes,
             Judge0SubmissionToken token, Duration timeout) {
         var pending = http.sendAsync(request, info -> new LimitedBodySubscriber(maxBytes));
         HttpResponse<byte[]> response;

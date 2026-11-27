@@ -1,4 +1,4 @@
-# Local Java Run setup
+# Local Java Run and optional Submit setup
 
 Run Judge0 in Linux containers and the runner with JDK 21. The browser calls the backend,
 which calls the runner. For a direct integration check, the commands below call the runner
@@ -191,3 +191,87 @@ fresh start, an actual accepted Run, wrong answer, compilation error, timeout, c
 memory-limit behavior, cleanup and a subsequent accepted Run, then stop/start and repeat a
 valid Run. Engine and HTTP failures must remain controlled. Report unsupported permissions
 or emulation problems explicitly rather than marking the platform verified from build-only CI.
+
+
+## Optional Java Submit
+
+The normal setup above enables Java Run. Java Submit also needs the experimental
+artifact overlay and a separate runner artifact key. Follow
+[the optional Submit HTTP instructions](../README.md#optional-internal-java-submit-http-api)
+and [the overlay setup](../dev/judge0/README.md#experimental-compiled-java-artifact-capture).
+The published image and default startup remain unchanged. Do not enable Submit
+against an engine without that overlay. The backend uses the same internal key
+for POST `/internal/v1/evaluation-jobs` and GET of the returned `Location`.
+Neither internal nor artifact keys belong in browser requests.
+
+Local Submit HTTP verification on 2026-11-24 used Apple Silicon and the experimental
+artifact overlay. Three real scenarios passed: accepted with a successful benchmark,
+wrong answer with a skipped benchmark, and compilation error with a skipped
+benchmark. Each used authenticated POST, GET polling, terminal replay and changed
+payload conflict checks. Hidden diagnostic fields were null. Separate HTTP tests
+covered active jobs, the shared Run/Submit queue, storage overflow, strict JSON and
+disabled configuration. `./mvnw -B -ntp clean verify` passed 812 tests with 18
+optional tests skipped and no failures or errors. The three real HTTP scenarios
+were run separately with `CODELOBBY_TEST_SUBMIT_HTTP=true`. The default engine
+configuration was restored and the containers stopped after verification. These
+checks do not establish Linux/Windows portability or concurrent Submit capacity.
+
+
+### Mixed Run and Submit verification
+
+On 2026-11-27 the optional `RunSubmitConcurrencyIntegrationTests` passed against
+real Judge0 on local Apple Silicon. The temporary runner used two active slots
+and one pending slot. Two Submits overlapped in populated kernel sandbox cgroups.
+A queued Run started after the wrong-answer Submit released capacity and overlapped
+with the remaining accepted Submit in populated cgroups. Excess Submit received
+429 and had no stored job. Active duplicate requests reused the existing jobs.
+Results and public outputs matched their request IDs, hidden diagnostics remained
+null, the accepted benchmark succeeded with five measured rounds, terminal replays
+matched the saved jobs and a subsequent Run returned the expected result.
+The test verified no remaining sandbox cgroups, journals, occupied reservations or
+workspace mounts after completion.
+
+The first trial found `COUNT=1` in the existing private `judge0.conf` and did not
+confirm parallel sandbox execution. The passing trial used a private temporary
+copy with `COUNT=2`, preserving all other configuration values. The original
+configuration was not edited. Two runner admission slots alone do not make a
+single Judge0 worker process execute two programs simultaneously. Deployment
+configuration must align the intended active concurrency with worker `COUNT`.
+This is a local functional check, not a load test or Linux/Windows certification.
+See [the probe instructions](../dev/judge0/README.md#optional-real-run-and-submit-concurrency-probe).
+
+
+### Submit failure and recovery verification
+
+On 2026-11-27 two real HTTP failure/recovery probes passed locally on Apple
+Silicon with the experimental artifact overlay. Each waited for a populated
+sandbox cgroup before killing a Judge0 service. API server loss produced
+FAILED/EXECUTION_INFRASTRUCTURE_ERROR. Worker loss reached the real 180-second
+Submit deadline and produced FAILED/REQUEST_DEADLINE_EXCEEDED. The probe-only
+Judge0 result timeout was 200 seconds so a shorter per-token timeout would not
+mask the global deadline. Deployment timeout settings were not changed.
+
+Both cases verified null results, retryable errors, failure of pending work without
+starting it, terminal replay, HTTP 503 for new Run and Submit requests, and no
+stored job for rejected work. Engine restart alone did not remove runner
+quarantine. After verified cleanup and a fresh runner instance, a new Submit
+finished with WRONG_ANSWER and a subsequent Run returned ACCEPTED. The old
+in-memory job disappeared on runner restart as documented. Cleanup checks covered
+sandbox cgroups, journals, occupied slot markers and workspace mounts.
+
+The first deadline probe exposed a classification race: a transport failure could
+publish the generic infrastructure error after the admission budget expired but
+before the timer reported its deadline. The coordinator now checks that budget
+when classifying a failure. Regression tests distinguish failure before expiry
+from failure at expiry without firing the timer. Both real probes passed after
+this fix. The test HTTP client also waits long enough for the existing 60-second
+Run budget. These changes do not claim that interruption proves engine termination.
+
+After verification the normal engine configuration was restored, containers were
+stopped and the temporary artifact key was removed. The private configuration and
+persistent database/worker-state volumes were retained. See
+[the opt-in failure probes](../dev/judge0/README.md#optional-real-submit-failure-and-recovery-probes).
+
+The final `./mvnw -B -ntp clean verify` run passed 814 tests with 20 optional
+tests skipped and no failures or errors. The two destructive integration scenarios
+were executed separately with `CODELOBBY_TEST_SUBMIT_FAILURES=true`.

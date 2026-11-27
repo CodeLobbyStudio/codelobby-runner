@@ -4,6 +4,9 @@ spring:
 
 runner:
   internal-key: ${CODELOBBY_INTERNAL_KEY:}
+  submit:
+    enabled: ${RUNNER_SUBMIT_ENABLED:false}
+    artifact-key: ${RUNNER_JUDGE0_ARTIFACT_KEY:}
   execution:
     max-active: ${RUNNER_EXECUTION_MAX_ACTIVE:2}
     max-pending: ${RUNNER_EXECUTION_MAX_PENDING:10}

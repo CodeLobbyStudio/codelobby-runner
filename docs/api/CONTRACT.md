@@ -2,7 +2,7 @@
 
 Revision: **1.0.0-draft.2**, 2026-10-20. Proposal for runner Issue #5; not implemented or approved as a deployed API.
 
-Implementation status: authenticated Java Run, request validation, bounded admission and real Judge0 execution are implemented. The local environment must include the bundled suite-report adapters. Submit, job polling, capabilities and C++/Python Run are not implemented. See README.md and docs/LOCAL_SETUP.md for startup and verification status. The complete contract below remains the target specification.
+Implementation status: authenticated Java Run, request validation, bounded admission and real Judge0 execution are implemented. The local environment must include the bundled suite-report adapters. Java Submit and job polling are opt-in with the experimental artifact overlay and explicit runner configuration. Capabilities and C++/Python Run are not implemented. See README.md and docs/LOCAL_SETUP.md for startup and verification status. The complete contract below remains the target specification.
 
 Participant-visibility clarification, 2026-10-23: public test descriptions and results are visible; public test source is not. Wire fields, enum values and the draft version remain unchanged. Backend and runner owners must agree on this revised behavior before integration.
 

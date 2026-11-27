@@ -9,6 +9,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import pl.codelobby.runner.core.ExecutionUnavailableException;
+import pl.codelobby.runner.core.EvaluationJobNotFoundException;
+import pl.codelobby.runner.core.JobStoreFullException;
+import pl.codelobby.runner.core.SubmissionIdConflictException;
 import pl.codelobby.runner.core.RequestValidationException;
 import pl.codelobby.runner.core.RunDeadlineExceededException;
 import pl.codelobby.runner.core.RunQueueFullException;
@@ -58,7 +61,17 @@ public class RunErrorHandler {
         return error(504, "REQUEST_DEADLINE_EXCEEDED", "Request deadline exceeded.", true);
     }
 
-    @ExceptionHandler(RunQueueFullException.class)
+    @ExceptionHandler(EvaluationJobNotFoundException.class)
+    ResponseEntity<ApiError> missingJob() {
+        return error(404, "JOB_NOT_FOUND", "Job not found.", false);
+    }
+
+    @ExceptionHandler(SubmissionIdConflictException.class)
+    ResponseEntity<ApiError> conflictingSubmission() {
+        return error(409, "SUBMISSION_ID_CONFLICT", "Submission id conflict.", false);
+    }
+
+    @ExceptionHandler({RunQueueFullException.class, JobStoreFullException.class})
     ResponseEntity<ApiError> fullQueue() {
         return ResponseEntity.status(429).header("Cache-Control", "no-store").header("Retry-After", "1")
                 .body(new ApiError("QUEUE_CAPACITY_EXCEEDED", "Queue capacity exceeded.", true));

@@ -16,7 +16,7 @@ import pl.codelobby.runner.model.JobError;
 import pl.codelobby.runner.model.SubmitRequest;
 import pl.codelobby.runner.model.TestSuite;
 
-/** Bounded background dispatch for validated Submit payloads. Not registered as a production bean. */
+/** Bounded background dispatch for validated Submit payloads, sharing Run admission capacity. */
 public final class AsyncSubmitCoordinator implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(AsyncSubmitCoordinator.class.getName());

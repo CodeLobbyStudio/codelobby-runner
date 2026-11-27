@@ -1,0 +1,13 @@
+# Opt-in private compiled Java artifacts and post-cleanup receipts.
+services:
+  workers:
+    environment:
+      CODELOBBY_CAPTURE_JAVA_ARTIFACTS: 'true'
+    volumes:
+      - ./image/java-artifacts.rb:/usr/local/lib/codelobby/java-artifacts.rb:ro
+      - ./image/java-artifact-capture.rb:/api/config/initializers/zzzz_codelobby_java_artifact_capture.rb:ro
+  server:
+    environment:
+      CODELOBBY_ARTIFACT_KEY: ${CODELOBBY_ARTIFACT_KEY:-}
+    volumes:
+      - ./image/java-artifact-endpoint.rb:/api/config/initializers/codelobby_java_artifact_endpoint.rb:ro

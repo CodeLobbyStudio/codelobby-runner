@@ -11,6 +11,10 @@ require ARGV.fetch(0)
 
 class ConfigurationBase
   def get_metadata; {time: "0.1", "time-wall": "0.2"}; end
+  def compile
+    @codelobby_build_usage = @observed_usage
+    :success
+  end
 end
 class ConfigurationJob < ConfigurationBase
   prepend CodeLobbySuiteReport
@@ -39,6 +43,32 @@ class SuiteConfigurationTest < Minitest::Test
       Open3.stub(:capture2, helper) { job.send(:get_metadata) }
     end
     stored
+  end
+
+  def compile_usage(started, observed)
+    job = ConfigurationJob.new
+    job.instance_variable_set(:@codelobby_compilation_started, started)
+    job.instance_variable_set(:@observed_usage, observed)
+    Open3.stub(:capture2, ["", Result.new(2)]) do
+      assert_equal :success, job.send(:compile)
+    end
+    job.instance_variable_get(:@codelobby_build_usage)
+  end
+
+  def test_reports_zero_only_when_the_phase_wrapper_observed_no_compiler
+    assert_equal({cpuTimeMs: 0.0, wallTimeMs: 0.0}, compile_usage(false, nil))
+  end
+
+  def test_does_not_treat_unknown_phase_as_zero_compilation
+    assert_nil compile_usage(nil, nil)
+  end
+
+  def test_preserves_missing_measurement_if_compiler_did_run
+    assert_nil compile_usage(true, nil)
+  end
+
+  def test_preserves_observed_compilation_measurement
+    assert_equal({cpuTimeMs: 5.0, wallTimeMs: 10.0}, compile_usage(true, {cpuTimeMs: 5.0, wallTimeMs: 10.0}))
   end
 
   def test_captures_configuration_failure_before_terminal_compilation_status

@@ -3,12 +3,32 @@ id = ARGV.fetch(0)
 exit 1 unless /\A(?:0|[1-9][0-9]{0,2})\z/.match?(id)
 
 mode = ARGV.fetch(1, "report")
-exit 1 unless ["report", "compile-budget", "configuration-error"].include?(mode)
+exit 1 unless ["report", "compile-budget", "configuration-error", "java-artifacts"].include?(mode)
 limit = 1_000_000
 flags = File::RDONLY | File::NOFOLLOW | File::NONBLOCK
 begin
   File.open("/var/local/lib/isolate/#{id}/box", flags) do |box|
     exit 2 unless box.stat.directory?
+    if mode == "java-artifacts"
+      require "/usr/local/lib/codelobby/java-artifacts"
+      root = "/sys/fs/cgroup/codelobby-runner-judge0-v1"
+      exit 1 unless File.read("/run/isolate/cgroup", 256).strip == root
+      File.open("#{root}/box-#{id}", flags) do |group|
+        exit 1 unless group.stat.directory? && group.stat.uid == 0
+        File.open("/proc/self/fd/#{group.fileno}/cgroup.events", flags) do |events|
+          exit 1 unless (events.read(4096) || "").lines.any? { |line| line.strip == "populated 0" }
+        end
+      end
+      begin
+        STDOUT.binmode
+        STDOUT.write(CodeLobbyJavaArtifacts.capture(box))
+        exit 0
+      rescue CodeLobbyJavaArtifacts::TooLarge
+        exit 3
+      rescue CodeLobbyJavaArtifacts::Rejected
+        exit 2
+      end
+    end
     if mode == "compile-budget"
       path = "/proc/self/fd/#{box.fileno}/compile"
       exit 2 unless File.lstat(path).file?

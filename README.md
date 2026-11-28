@@ -59,6 +59,7 @@ runner together, use `./dev/start-runner.sh`. It preserves separate private keys
 without printing them. Judge0 uses localhost port
 2359 and is separate from the runner application on port 8081.
 Follow the [local setup guide](docs/LOCAL_SETUP.md) for macOS, Linux or Windows with WSL2.
+Backend and frontend owners can follow the [integration handoff](docs/LOCAL_SETUP.md#integration-handoff-backend-and-frontend) for payload ownership, job polling, participant-safe responses and the joint test plan.
 The guide distinguishes configured environments from those actually verified.
 
 ## Current scope

@@ -363,3 +363,309 @@ the persistent artifact key preserved with private permissions. Neither private
 configuration nor database/worker-state volumes were removed. No Java code or
 language toolchains changed in this rollout. Cross-platform runtime certification
 and a cold installation on another machine remain unverified.
+
+
+## Integration handoff: backend and frontend
+
+Updated 2026-11-27 for runner `main` after PR #41 and the published Judge0 1.2.0
+image. This section describes the runner interface and work required in the other
+repositories. It does not claim the complete website has been tested.
+
+At this check, backend `main` snapshot
+[66b420b](https://github.com/CodeLobbyStudio/codelobby-backend/tree/66b420bdab6ffdd5b3d8ca6b782d31ebb8440478)
+did not contain RunnerClient or Run/Submit controllers. An older local integration
+checkout contains Run integration, but is not proof that those changes are merged.
+Agree the backend/frontend revisions to use before the joint test. The public
+backend routes below are proposals, not verified existing endpoints.
+
+### Connection and startup
+
+```text
+Browser -> backend participant API -> runner internal API -> Judge0
+```
+
+The frontend implements the code editor and buttons. The backend authenticates
+users, checks lobby permissions, constructs authoritative requests and persists
+results. The runner validates and evaluates Java. Judge0 supplies sandboxed
+compilation/execution. Keeping these programs in separate repositories does not
+prevent HTTP communication between their running processes.
+
+For runner startup, follow the prerequisites above and run from the runner root:
+
+```sh
+./dev/start-runner.sh
+```
+
+Keep this terminal open. The engine uses `http://127.0.0.1:2359` and the runner
+uses `http://127.0.0.1:8081` by default. No registry login or image build is needed.
+Start the backend and frontend according to their selected revisions' READMEs.
+This command starts only the engine and runner, not the other repositories.
+Default admission is two active operations and ten pending operations across the
+whole runner instance, shared by Run and Submit, not a separate pool per lobby.
+Keep engine COUNT aligned with the chosen active capacity. Existing private
+configuration is preserved, including an older COUNT=1 setting.
+
+| Setting | Owner and meaning |
+| --- | --- |
+| Runner base URL | Backend config, normally `http://127.0.0.1:8081` when both JVMs run directly on the same host |
+| Internal key | Backend sends it as `X-CodeLobby-Internal-Key`. Default runner key file is `dev/runner-internal.key` |
+| Artifact key | Runner-to-Judge0 only, normally `dev/judge0/judge0.conf.artifact-key`. Backend does not need it |
+| Public backend URL | Frontend config. The browser calls this address, never runner/Judge0 directly |
+
+If CODELOBBY_INTERNAL_KEY was provided before launching, the launcher preserves
+that value instead of creating the default internal key file. Give the backend
+the same value through its protected configuration. Backend config property names
+must be implemented/agreed by its owner, they are not automatically supplied by
+the runner. Never place either key in frontend environment variables or responses.
+If the backend runs in a container, its localhost points to that container. Agree
+a reachable private runner address and bind settings rather than copying the
+host-only URL blindly. Keep Judge0 private.
+
+The implemented internal routes are:
+
+| Method and path | Result |
+| --- | --- |
+| POST `/internal/v1/runs` | Synchronous public-test evaluation, no benchmark |
+| POST `/internal/v1/evaluation-jobs` | Asynchronous public and hidden evaluation plus benchmark policy |
+| GET `/internal/v1/evaluation-jobs/{submissionId}` | Job snapshot, never starts work |
+
+Use UTF-8 JSON, Content-Type/Accept `application/json` and the internal key header.
+Only JAVA is currently implemented through the runner. The capabilities endpoint
+and runner C++/Python flows remain unimplemented even though Judge0 has those
+compilers. A health response alone does not prove sandbox execution works.
+
+### Direct runner check before backend integration
+
+Run these only from a trusted backend/developer terminal in the runner root,
+not from browser code. If the launcher generated the default internal key file:
+
+```sh
+if [ -z "${CODELOBBY_INTERNAL_KEY:-}" ]; then
+  export CODELOBBY_INTERNAL_KEY="$(cat dev/runner-internal.key)"
+fi
+curl -sS -i http://127.0.0.1:8081/internal/v1/runs \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -H "X-CodeLobby-Internal-Key: $CODELOBBY_INTERNAL_KEY" \
+  --data-binary @docs/api/examples/run-request.json
+curl -sS -i http://127.0.0.1:8081/internal/v1/evaluation-jobs \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -H "X-CodeLobby-Internal-Key: $CODELOBBY_INTERNAL_KEY" \
+  --data-binary @docs/api/examples/submit-request.json
+curl -sS http://127.0.0.1:8081/internal/v1/evaluation-jobs/submission-001 \
+  -H 'Accept: application/json' \
+  -H "X-CodeLobby-Internal-Key: $CODELOBBY_INTERNAL_KEY"
+```
+
+The Submit example uses the fixed ID submission-001. Repeat GET until terminal,
+or use the relative Location returned by POST. Reposting this unchanged example
+replays its job while retained. A different solution/attempt requires a new ID.
+These responses are internal, do not forward them unfiltered to participants.
+
+### Backend implementation steps
+
+1. Configure an HTTP client for the private runner origin and internal key. Allow
+   more than the 60-second total Run budget when waiting for synchronous Run,
+   for example 65-70 seconds. Submit POST only registers a job, so do not hold a
+   browser request open waiting for its evaluation/benchmark to finish.
+2. On each participant action, authenticate the user and verify lobby membership,
+   task availability, selected language and permission to read that submission.
+   Apply ownership checks to every status request as well as creation.
+3. Load the immutable task version from backend storage. Build roles, files,
+   suites, entry classes and limits from it. Accept only declared EDITABLE file
+   overrides from the browser. Do not accept browser-supplied tests, file roles,
+   arbitrary entry points or trusted execution limits.
+4. For Run, send every public suite and no HIDDEN_TEST files/suites. For Submit,
+   send the complete authoritative public/hidden manifest, with public suites
+   before hidden suites. Host test source is never sent to the participant.
+5. Before POST Submit, create a durable submission record and freeze its complete
+   request snapshot under a unique submissionId, such as a UUID. Preserve exact
+   source contents and the taskVersionId. An edited solution is a new attempt.
+6. POST the frozen request. Save the job ID and resolve the relative Location
+   against the configured runner origin. Return the backend's own submission ID
+   and processing state to the frontend. Do not blindly forward the internal Job.
+7. Poll the runner independently of browser navigation, normally every second
+   with backoff up to five seconds. GET is read-only. Stop polling a terminal job.
+   Queue wait counts towards the 180-second Submit deadline.
+8. Persist the final result/error and expose a participant-safe DTO. Use stored
+   results for later reads. Runner storage is RAM-only, holds at most 100 jobs,
+   expires terminal jobs after 30 minutes and is lost on restart. It is not the
+   backend's results database or ranking store.
+
+The complete payloads are already supplied in
+[the Run example](api/examples/run-request.json) and
+[the Submit example](api/examples/submit-request.json). These are full valid
+requests, not fixed task signatures. Use your own authoritative task data.
+
+| Submit field | Backend must supply |
+| --- | --- |
+| submissionId | Saved deduplication/attempt ID, unique across the integration |
+| taskVersionId | Immutable authoritative version used for this attempt |
+| language | JAVA |
+| taskFiles | Complete original path/type/content manifest for the selected suites |
+| submissionFiles | Participant path/content overrides of EDITABLE files only, possibly an empty array |
+| testSuites | Suite IDs, PUBLIC/HIDDEN visibility, test file paths, JAVA_MAIN/mainClass and ordered case IDs |
+| limits | Valid integer CPU, wall-time and memory budgets from trusted task settings |
+
+Use all required fields. Strict parsing rejects unknown/missing/null fields and
+inappropriate types. The response contractVersion remains `1.0.0-draft.2`, it is
+not the image version `1.2.0`. See the [contract](api/CONTRACT.md) and
+[OpenAPI schema](api/openapi.yaml) for the full shapes and cross-field rules.
+
+### Status, retry and error handling
+
+| Runner response | Backend/frontend meaning |
+| --- | --- |
+| New POST 202 | Accepted job, still inspect state in the body |
+| Identical active POST 202 | Existing job, no second execution |
+| Identical terminal POST 200 | Existing final snapshot, no new execution |
+| GET 200 + QUEUED/RUNNING | Processing, result/error are null |
+| GET 200 + FINISHED | Evaluation completed. Check result.status, not state alone |
+| GET 200 + FAILED | Processing/infrastructure error, result is null. Use safe error.code/message/retryable |
+| 400/413/415 | Invalid request or exceeded limits, correct the payload/configuration |
+| 401 | Internal-key/configuration error, not a participant login prompt |
+| 404 JOB_NOT_FOUND | Unknown, expired or lost job. Reconcile against durable backend state |
+| 409 SUBMISSION_ID_CONFLICT | Same ID with different frozen data, do not silently overwrite |
+| 429 | Admission/storage full, respect Retry-After and retry with bounded backoff |
+| 503 | Execution unavailable or quarantined, report unavailability and use bounded retries/recovery |
+| Run 504 | Run deadline exceeded. It does not prove the sandbox stopped |
+| 500 | Internal processing error. Do not default to acceptance or automatic repeated submissions |
+
+FINISHED may contain WRONG_ANSWER, COMPILATION_ERROR, RUNTIME_ERROR or other
+negative verdicts. Only result.status ACCEPTED means accepted evaluation.
+Handle every verdict and unknown values explicitly. Do not default to acceptance.
+Benchmark state is separate: a nonaccepted evaluation skips benchmarking. A
+verified benchmark-only failure may leave FINISHED/ACCEPTED with benchmark FAILED
+and null metrics. Do not turn that into a wrong-answer verdict.
+
+If the Submit POST response is lost, reconcile with GET or resend the same saved
+ID and identical payload. Do not create a new attempt just because transport
+failed. After a stored retryable FAILED result, a deliberate new evaluation needs
+a new linked submissionId. Identical replay still returns that FAILED job.
+After restart/expiry a lost ID can execute again, so there is no durable exactly-once
+guarantee. Consult persisted backend results before reconstruction or retry.
+For pre-admission 429/503, use bounded retries, for example 1/2/4 seconds with
+jitter and at most three automatic retries, respecting a larger Retry-After.
+A quarantined service may require operator recovery, not more repeated requests.
+The runner has no cancellation/callback endpoint. Closing a browser or stopping
+polling does not cancel accepted execution.
+
+### Participant-safe response
+
+Backend must whitelist fields for its public response. Include the overall
+state/verdict, appropriate aggregate counts, public-case feedback and safe benchmark
+summary. Match public test IDs to simplified names/descriptions stored with the
+authoritative task version. Those descriptions are backend data, not runner fields.
+
+Drop VISIBLE_TEST and HIDDEN_TEST file source from participant workspace/download
+responses. Show only EDITABLE and READ_ONLY files. Drop individual hidden result
+records, hidden IDs and suite metadata from participant results. Publish aggregate
+hidden counts only. Runner already nulls hidden diagnostics, but that alone is not
+a complete participant-facing filter. Treat compiler output, message, stdout/stderr
+and public diagnostics as nullable. Display safe strings as text, not raw HTML.
+Shared-sandbox tests are not tamper-proof external grading, as explained in the
+contract. Do not promise runtime test secrecy or use these results as proof of
+adversarially trusted execution.
+
+### Frontend implementation steps
+
+1. Agree the public backend endpoints and DTOs before wiring buttons. Suggested
+   routes are listed below. They are not the runner routes or a promise that
+   backend main already implements them.
+2. Load an authorized workspace from the backend. Render the task description,
+   selected language, simplified public test descriptions and participant-visible
+   files. The backend must already have filtered test source out of the payload.
+3. Initialize CodeMirror or the team's chosen editor in the frontend with Java
+   syntax support, file tabs and per-path contents. READ_ONLY tabs cannot be
+   edited. Preserve edits when changing tabs. The runner supplies no web editor.
+4. On Run, collect current EDITABLE file contents and call the agreed backend Run
+   route. Show a loading state and then public test feedback/overall verdict.
+5. On Submit, capture one coherent editor snapshot and call the backend creation
+   route once. Keep the returned public submission ID. Disable duplicate submits
+   for that pending attempt and show QUEUED/RUNNING separately from the verdict.
+6. Poll only the backend's status route, using its participant-safe DTO. Stop on
+   terminal state, page/component cleanup or a controlled polling error. Allow
+   reopening an attempt using the backend's persisted record. Browser polling is
+   not the backend's worker that retrieves/persists final runner results.
+7. Show FINISHED with its verdict and benchmark state. Show FAILED/unavailable as
+   a processing problem, not as an incorrect solution. Handle nullable diagnostics,
+   queue full, lost connections and backend authentication/session failures.
+8. Treat edits made after clicking Submit as a new draft. Do not overwrite the
+   pending attempt's frozen source. A fresh deliberate attempt receives a new ID.
+
+Suggested public backend API to agree with its owner:
+
+| Proposed method and path | Purpose |
+| --- | --- |
+| GET `/api/lobbies/{lobbyId}/tasks/{taskId}/workspace` | Authorized participant workspace |
+| POST `/api/lobbies/{lobbyId}/tasks/{taskId}/run` | Public-suite Run |
+| POST `/api/lobbies/{lobbyId}/tasks/{taskId}/submissions` | Persist and create an asynchronous attempt |
+| GET `/api/submissions/{submissionId}` | Authorized public status/result from backend storage |
+
+The browser body should contain the selected allowed language if required by the
+agreed backend DTO, plus editable path/content overrides. It must not contain the
+internal key, host tests or trusted execution configuration. Agree exact DTO field
+names rather than copying the runner's authoritative envelope into the browser.
+
+### Joint acceptance check
+
+First select compatible runner, backend and frontend revisions and follow each
+repository's startup instructions. These checks are a plan for the joint session,
+not a claim that the complete UI was already exercised:
+
+- Confirm Run and Submit work directly through the runner, then through backend
+  HTTP before connecting the browser. Health alone is insufficient.
+- Open an example multi-file Java task, edit its editable file and confirm the
+  read-only helper cannot be changed through the normal editor.
+- Run a correct solution, then Submit it. Confirm public feedback and an accepted
+  result, with benchmark data shown only when available.
+- Submit an incorrect solution and a compilation error. Both can be FINISHED with
+  negative verdicts rather than FAILED. Verify safe error presentation.
+- Confirm a repeated HTTP request for the same frozen attempt creates one runner
+  job, while a new edited attempt receives a new ID.
+- Confirm queue-full/unavailable handling and that leaving the page does not
+  cancel backend processing. Reopen the persisted attempt after completion.
+- Inspect browser Network responses for absence of both internal keys, public and
+  hidden test source, hidden individual IDs/results and raw internal traces.
+- Try reading another participant's submission and verify backend authorization.
+- Restart runner and verify stored backend results remain readable. Missing active
+  jobs must be reconciled rather than automatically classified as wrong answers.
+
+Only the runner repository was changed to prepare this guide. The backend and
+frontend owners must implement/confirm their public API and participate in the
+end-to-end test. Backend persistence, frontend behavior and the complete website
+are not certified by the earlier runner-only probes.
+
+
+## Submit retention verification
+
+On 2026-11-27 `SubmitJobRetentionTests` verified the real HTTP controller, error
+mapping and InMemoryEvaluationJobStore using a controlled Clock and a test-only
+executor. No Judge0 process or 30-minute real-time wait was used. The production
+store and execution code did not need changes.
+
+The four scenarios cover:
+
+- FINISHED results remain readable one nanosecond before expiresAt, expire exactly
+  at that instant and return HTTP 404/JOB_NOT_FOUND. Identical terminal replay
+  does not refresh retention or dispatch evaluation again.
+- FAILED retention is measured from completion rather than creation, with the
+  same 30-minute boundary and HTTP 404 after expiry.
+- QUEUED and RUNNING snapshots have no expiresAt and are not purged by terminal
+  retention. These snapshots are seeded directly to isolate storage retention
+  from the coordinator's separate, previously tested 180-second execution limit.
+  The test does not claim real executions can run for hours.
+- A full 100-record store rejects new work with 429 before expiry. At expiry it
+  frees space, preserves the active snapshots and removes expired fingerprints.
+  A changed payload under an expired ID can create a fresh job, whereas it gives
+  409 before expiry. This confirms retention is not durable exactly-once execution.
+
+The four HTTP scenarios and 12 existing store tests passed in the focused run.
+This validation complements the earlier real-engine execution/recovery probes.
+The backend must still persist results independently of runner RAM and authorize
+participant access to its own public result endpoints.
+
+Expiry is enforced when the store is accessed, including GET and registration.
+There is no separate background retention timer. Reads at or after expiresAt
+observe the record as absent and registration purges expired entries before
+checking storage capacity. The final `./mvnw -B -ntp clean verify` run passed 818
+tests with 20 optional tests skipped and no failures or errors.
